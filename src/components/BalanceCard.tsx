@@ -1,14 +1,19 @@
-import { Wallet, Eye, EyeOff, TrendingUp } from 'lucide-react';
+import { Wallet, Eye, EyeOff, TrendingUp, DollarSign } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
 interface BalanceCardProps {
-  balance: number;
+  usdcBalance: number;
+  localCurrency: string;
+  exchangeRate: number;
   className?: string;
 }
 
-export function BalanceCard({ balance, className }: BalanceCardProps) {
+export function BalanceCard({ usdcBalance, localCurrency, exchangeRate, className }: BalanceCardProps) {
   const [showBalance, setShowBalance] = useState(true);
+  
+  const fiatValue = usdcBalance * exchangeRate;
+  const currencySymbol = localCurrency === 'USD' ? '$' : localCurrency === 'EUR' ? '€' : localCurrency;
 
   return (
     <div
@@ -17,12 +22,12 @@ export function BalanceCard({ balance, className }: BalanceCardProps) {
         className
       )}
     >
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           <div className="p-2 rounded-lg bg-primary-foreground/20">
             <Wallet className="w-5 h-5" />
           </div>
-          <span className="text-sm font-medium opacity-90">Personal Wallet Balance</span>
+          <span className="text-sm font-medium opacity-90">Available Balance</span>
         </div>
         <button
           onClick={() => setShowBalance(!showBalance)}
@@ -37,18 +42,31 @@ export function BalanceCard({ balance, className }: BalanceCardProps) {
         </button>
       </div>
 
-      <div className="mb-4">
-        <div className="flex items-baseline gap-2">
-          <span className="text-4xl font-bold tracking-tight">
-            {showBalance ? `$${balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '••••••'}
+      <div className="mb-6">
+        {/* Primary Balance - USDC */}
+        <div className="flex items-baseline gap-3 mb-2">
+          <span className="text-5xl font-bold tracking-tight">
+            {showBalance ? usdcBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '••••••'}
           </span>
-          <span className="text-lg font-medium opacity-80">USDC</span>
+          <span className="text-xl font-semibold opacity-90 bg-primary-foreground/20 px-3 py-1 rounded-lg">
+            USDC
+          </span>
         </div>
+        
+        {/* Fiat Equivalent */}
+        {localCurrency !== 'USDC' && (
+          <div className="flex items-center gap-2">
+            <DollarSign className="w-4 h-4 opacity-70" />
+            <span className="text-lg opacity-80">
+              ≈ {showBalance ? `${currencySymbol}${fiatValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '••••••'} {localCurrency}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2 text-sm opacity-90">
         <TrendingUp className="w-4 h-4" />
-        <span>Secured in your personal account • Global transfers</span>
+        <span>Secured in your personal wallet • Instant global transfers</span>
       </div>
     </div>
   );

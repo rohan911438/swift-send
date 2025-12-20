@@ -3,7 +3,10 @@ export interface User {
   name: string;
   phone: string;
   email?: string;
-  balance: number;
+  balance: number; // Legacy balance field
+  usdcBalance: number; // USDC balance
+  localCurrency: string; // User's local currency code (USD, EUR, etc.)
+  exchangeRate: number; // Rate from USDC to local currency
   isVerified: boolean;
   onboardingCompleted: boolean;
   walletAddress?: string;

@@ -5,7 +5,10 @@ export const currentUser: User = {
   name: 'Maria Santos',
   phone: '+1 (555) 123-4567',
   email: 'maria.santos@email.com',
-  balance: 1250.50,
+  balance: 1250.50, // Legacy field
+  usdcBalance: 1250.50, // USDC balance
+  localCurrency: 'USD',
+  exchangeRate: 1.0, // 1 USDC = 1 USD
   isVerified: true,
   onboardingCompleted: true,
   walletAddress: 'wallet_maria_santos_123',

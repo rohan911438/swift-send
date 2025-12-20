@@ -5,7 +5,7 @@ import { TransactionItem } from '@/components/TransactionItem';
 import { BottomNav } from '@/components/BottomNav';
 import { useAuth } from '@/contexts/AuthContext';
 import { transactions } from '@/data/mockData';
-import { Send, Plus, Bell, ArrowRight, Shield, Info } from 'lucide-react';
+import { Send, Plus, Bell, ArrowRight, Shield, Info, Zap, Clock, TrendingDown } from 'lucide-react';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -58,55 +58,80 @@ export default function Dashboard() {
           )}
 
           {/* Balance Card */}
-          <BalanceCard balance={user?.balance || 0} />
+          <BalanceCard 
+            usdcBalance={user?.usdcBalance || 0}
+            localCurrency={user?.localCurrency || 'USD'}
+            exchangeRate={user?.exchangeRate || 1.0}
+          />
 
-          {/* Quick Actions */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Value Propositions */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { icon: Zap, label: 'Instant', desc: 'Transfers in seconds', color: 'text-yellow-600' },
+              { icon: TrendingDown, label: 'Low Cost', desc: '$0.50 avg fee', color: 'text-green-600' },
+              { icon: Shield, label: 'Secure', desc: 'Bank-grade safety', color: 'text-blue-600' },
+            ].map(({ icon: Icon, label, desc, color }) => (
+              <div
+                key={label}
+                className="bg-card rounded-xl p-3 shadow-card text-center animate-slide-up"
+              >
+                <div className={`w-8 h-8 mx-auto rounded-lg bg-muted flex items-center justify-center mb-2`}>
+                  <Icon className={`w-4 h-4 ${color}`} />
+                </div>
+                <p className="font-semibold text-xs text-foreground">{label}</p>
+                <p className="text-xs text-muted-foreground">{desc}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Primary Actions */}
+          <div className="space-y-3">
             <Button
               variant="hero"
               size="lg"
-              className="h-16 text-base"
+              className="w-full h-16 text-lg font-semibold"
               onClick={() => navigate('/send')}
             >
-              <Send className="w-5 h-5" />
+              <Send className="w-6 h-6" />
               Send Money
             </Button>
-            <Button
-              variant="secondary"
-              size="lg"
-              className="h-16 text-base"
-              onClick={() => {}}
-            >
-              <Plus className="w-5 h-5" />
-              Add Funds
-            </Button>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                variant="secondary"
+                size="lg"
+                className="h-14"
+                onClick={() => {}}
+              >
+                <Plus className="w-5 h-5" />
+                Add Funds
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                className="h-14"
+                onClick={() => navigate('/history')}
+              >
+                <Clock className="w-5 h-5" />
+                View History
+              </Button>
+            </div>
           </div>
 
-          {/* Wallet Security Info */}
+          {/* Quick Stats */}
           <div className="bg-card rounded-xl p-4 shadow-card">
-            <div className="flex items-start gap-3 mb-3">
-              <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/20 flex items-center justify-center flex-shrink-0">
-                <Shield className="w-4 h-4 text-green-600" />
-              </div>
+            <h3 className="font-semibold text-foreground mb-3">This Month</h3>
+            <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <h3 className="font-semibold text-foreground text-sm">Your Personal Wallet</h3>
-                <p className="text-xs text-muted-foreground">
-                  Your money is safely stored in your personal account, protected by bank-grade security
-                </p>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-3 gap-4 text-center pt-3 border-t border-border">
-              <div>
-                <p className="text-lg font-bold text-foreground">$850</p>
-                <p className="text-xs text-muted-foreground">Sent this month</p>
+                <p className="text-2xl font-bold text-foreground">$850</p>
+                <p className="text-xs text-muted-foreground">Total Sent</p>
               </div>
               <div className="border-x border-border">
-                <p className="text-lg font-bold text-success">$2.50</p>
-                <p className="text-xs text-muted-foreground">Fees saved</p>
+                <p className="text-2xl font-bold text-success">$2.50</p>
+                <p className="text-xs text-muted-foreground">Fees Saved</p>
               </div>
               <div>
-                <p className="text-lg font-bold text-foreground">12</p>
+                <p className="text-2xl font-bold text-foreground">12</p>
                 <p className="text-xs text-muted-foreground">Transfers</p>
               </div>
             </div>
@@ -126,13 +151,41 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-3">
-              {recentTransactions.map((transaction) => (
-                <TransactionItem
-                  key={transaction.id}
-                  transaction={transaction}
-                  onClick={() => {}}
-                />
-              ))}
+              {recentTransactions.length > 0 ? (
+                recentTransactions.map((transaction) => (
+                  <TransactionItem
+                    key={transaction.id}
+                    transaction={transaction}
+                    onClick={() => {}}
+                  />
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center mb-4">
+                    <Send className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="font-semibold text-foreground mb-2">Ready to send money?</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Your wallet is set up and ready for global transfers
+                  </p>
+                  <Button onClick={() => navigate('/send')} variant="outline">
+                    Send Your First Transfer
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Trust Indicators */}
+          <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <Shield className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+              <div>
+                <h3 className="font-semibold text-foreground mb-1">Your Money is Safe</h3>
+                <p className="text-sm text-muted-foreground">
+                  USDC is a regulated stablecoin backed 1:1 by US dollars. Your funds are secured with bank-grade encryption in your personal wallet.
+                </p>
+              </div>
             </div>
           </div>
         </div>
