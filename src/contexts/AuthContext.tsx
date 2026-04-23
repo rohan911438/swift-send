@@ -1,6 +1,24 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
 import { User, AuthUser } from '@/types';
-import { currentUser } from '@/data/mockData';
+import { apiFetch } from '@/lib/api';
+
+function parseUserDto(data: unknown): User {
+  const u = data as Record<string, unknown>;
+  return {
+    id: String(u.id),
+    name: String(u.name),
+    phone: String(u.phone),
+    email: u.email ? String(u.email) : undefined,
+    balance: Number(u.balance ?? 0),
+    usdcBalance: Number(u.usdcBalance ?? u.balance ?? 0),
+    localCurrency: String(u.localCurrency ?? 'USD'),
+    exchangeRate: Number(u.exchangeRate ?? 1),
+    isVerified: Boolean(u.isVerified),
+    onboardingCompleted: Boolean(u.onboardingCompleted),
+    walletAddress: u.walletAddress ? String(u.walletAddress) : undefined,
+    createdAt: u.createdAt ? new Date(String(u.createdAt)) : new Date(),
+  };
+}
 
 interface AuthContextType {
   user: User | null;
@@ -25,131 +43,157 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [onboardingStep, setOnboardingStep] = useState(0);
 
-  const login = async (identifier: string): Promise<{ needsVerification: boolean; isNewUser: boolean }> => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    // Check if user exists (mock logic)
-    const isEmail = identifier.includes('@');
-    const existingUser = isEmail ? 
-      identifier === currentUser.email : 
-      identifier === currentUser.phone;
-    
-    if (existingUser) {
-      // User exists, check verification status
-      const mockAuthUser: AuthUser = {
-        id: currentUser.id,
-        email: isEmail ? identifier : undefined,
-        phone: !isEmail ? identifier : undefined,
-        isVerified: true,
-        hasWallet: true
-      };
-      setAuthUser(mockAuthUser);
-      
-      if (mockAuthUser.isVerified) {
-        // User is verified, log them in
-        setUser(currentUser);
-        return { needsVerification: false, isNewUser: false };
+  const applySessionPayload = useCallback(
+    (payload: { authUser: AuthUser; user?: unknown | null; onboardingRequired?: boolean }) => {
+      setAuthUser(payload.authUser);
+      if (payload.user) {
+        setUser(parseUserDto(payload.user));
       } else {
-        return { needsVerification: true, isNewUser: false };
+        setUser(null);
       }
-    } else {
-      // New user, treat as signup
-      const newAuthUser: AuthUser = {
-        id: `user_${Date.now()}`,
-        email: isEmail ? identifier : undefined,
-        phone: !isEmail ? identifier : undefined,
-        isVerified: false,
-        hasWallet: false
-      };
-      setAuthUser(newAuthUser);
-      return { needsVerification: true, isNewUser: true };
+      if (payload.onboardingRequired) {
+        setOnboardingStep(1);
+      } else if (payload.user) {
+        setOnboardingStep(0);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch('/auth/me');
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          authUser: AuthUser;
+          user: unknown | null;
+          onboardingRequired?: boolean;
+        };
+        if (cancelled) return;
+        applySessionPayload(data);
+      } catch {
+        // offline or server down — stay logged out
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applySessionPayload]);
+
+  const login = async (identifier: string): Promise<{ needsVerification: boolean; isNewUser: boolean }> => {
+    const res = await apiFetch('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ identifier }),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      needsVerification?: boolean;
+      isNewUser?: boolean;
+      authUser?: AuthUser;
+      user?: unknown | null;
+    };
+    if (!res.ok) {
+      throw new Error(body.error || 'Login failed');
     }
+    if (body.authUser) {
+      applySessionPayload({
+        authUser: body.authUser,
+        user: body.user ?? null,
+        onboardingRequired: false,
+      });
+    }
+    const needsVerification = Boolean(body.needsVerification);
+    if (needsVerification) {
+      setOnboardingStep(0);
+    }
+    return {
+      needsVerification,
+      isNewUser: Boolean(body.isNewUser),
+    };
   };
 
-  const signup = async (identifier: string, name?: string): Promise<{ needsVerification: boolean }> => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    const isEmail = identifier.includes('@');
-    const newAuthUser: AuthUser = {
-      id: `user_${Date.now()}`,
-      email: isEmail ? identifier : undefined,
-      phone: !isEmail ? identifier : undefined,
-      isVerified: false,
-      hasWallet: false
-    };
-    setAuthUser(newAuthUser);
+  const signup = async (identifier: string, _name?: string): Promise<{ needsVerification: boolean }> => {
+    const res = await apiFetch('/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({ identifier }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string; authUser?: AuthUser };
+    if (!res.ok) {
+      throw new Error(body.error || 'Sign up failed');
+    }
+    if (body.authUser) {
+      setAuthUser(body.authUser);
+      setUser(null);
+      setOnboardingStep(0);
+    }
     return { needsVerification: true };
   };
 
   const verifyCode = async (code: string) => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    // In development mode (localhost), accept any 6-digit code
-    const isDevelopment = window.location.hostname === 'localhost';
-    const isValidCode = isDevelopment ? code.length === 6 : code === '123456';
-    
-    if (!isValidCode) {
-      throw new Error('Invalid verification code');
+    const res = await apiFetch('/auth/verify', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      authUser?: AuthUser;
+      user?: unknown | null;
+      onboardingRequired?: boolean;
+    };
+    if (!res.ok) {
+      throw new Error(body.error || 'Verification failed');
     }
-    
-    if (authUser) {
-      const verifiedAuthUser = { ...authUser, isVerified: true };
-      setAuthUser(verifiedAuthUser);
-      
-      // Check if this is an existing user or new user
-      if (authUser.hasWallet) {
-        // Existing user - load their data
-        setUser(currentUser);
-        setOnboardingStep(0);
-      } else {
-        // New user - start onboarding
-        setOnboardingStep(1);
-      }
+    if (body.authUser) {
+      applySessionPayload({
+        authUser: body.authUser,
+        user: body.user ?? null,
+        onboardingRequired: body.onboardingRequired,
+      });
     }
   };
 
   const resendCode = async () => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 500));
   };
 
   const completeOnboarding = async (userData: Partial<User>) => {
-    // Simulate API call and wallet creation
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    
-    if (authUser) {
-      const newUser: User = {
-        id: authUser.id,
-        name: userData.name || 'User',
-        email: authUser.email || userData.email,
-        phone: authUser.phone || userData.phone || '',
-        balance: 0,
-        isVerified: true,
-        onboardingCompleted: true,
-        walletAddress: `wallet_${authUser.id}`,
-        createdAt: new Date()
-      };
-      
-      setUser(newUser);
-      setOnboardingStep(0);
+    const res = await apiFetch('/auth/onboarding/complete', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: userData.name,
+        email: userData.email,
+        phone: userData.phone,
+      }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string; user?: unknown; authUser?: AuthUser };
+    if (!res.ok) {
+      throw new Error(body.error || 'Could not complete onboarding');
+    }
+    if (body.authUser && body.user) {
+      applySessionPayload({
+        authUser: body.authUser,
+        user: body.user,
+        onboardingRequired: false,
+      });
     }
   };
 
   const logout = () => {
-    setUser(null);
-    setAuthUser(null);
-    setOnboardingStep(0);
+    void apiFetch('/auth/logout', { method: 'POST' }).finally(() => {
+      setUser(null);
+      setAuthUser(null);
+      setOnboardingStep(0);
+    });
   };
 
   const updateBalance = (newBalance: number) => {
     if (user) {
-      setUser({ 
-        ...user, 
-        balance: newBalance, // Update legacy balance for compatibility
-        usdcBalance: newBalance // Update USDC balance
+      setUser({
+        ...user,
+        balance: newBalance,
+        usdcBalance: newBalance,
       });
     }
   };

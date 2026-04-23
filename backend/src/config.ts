@@ -43,6 +43,13 @@ export interface AppConfig {
     enableEscrow: boolean;
     enableRiskScoring: boolean;
   };
+  auth: {
+    jwtSecret: string;
+    jwtExpiresSeconds: number;
+    cookieName: string;
+    /** Browser origin(s) allowed for credentialed CORS (comma-separated). */
+    corsOrigins: string[];
+  };
 }
 
 const intFromEnv = (value: string | undefined, fallback: number) => {
@@ -102,6 +109,15 @@ export const config: AppConfig = {
     remittanceEscrow: process.env.CONTRACT_REMITTANCE_ESCROW,
     walletRegistry: process.env.CONTRACT_WALLET_REGISTRY,
     complianceLimits: process.env.CONTRACT_COMPLIANCE_LIMITS,
+  },
+  auth: {
+    jwtSecret: process.env.JWT_SECRET || 'dev-only-change-me-in-production',
+    jwtExpiresSeconds: intFromEnv(process.env.JWT_EXPIRES_SECONDS, 60 * 60 * 24 * 7),
+    cookieName: process.env.AUTH_COOKIE_NAME || 'ss_session',
+    corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:8080,http://127.0.0.1:8080')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
   },
 };
 
