@@ -56,6 +56,7 @@ export class TransferLifecycle {
     this.appendStatus(transfer, 'validated', complianceDecision.warnings.join(', ') || undefined);
 
     const escrow = await this.wallets.reserveFunds({
+      userId: command.userId,
       walletId: command.fromWalletId,
       transferId: transfer.id,
       amount: command.amount,
@@ -139,13 +140,14 @@ export class TransferLifecycle {
         timestamp: new Date().toISOString(),
         payload: { transferId: transfer.id },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       transfer.processingAttempts += 1;
-      transfer.lastError = err?.message || 'unknown settlement error';
+      transfer.lastError = err instanceof Error ? err.message : 'unknown settlement error';
       logger.error({ transferId, err }, 'transfer settlement failed');
 
       if (transfer.processingAttempts >= config.queues.maxSettlementAttempts) {
         await this.wallets.refundEscrow({
+          userId: transfer.userId,
           transferId: transfer.id,
           destinationAccount: transfer.fromWalletId,
           amount: transfer.amount,

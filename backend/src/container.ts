@@ -3,6 +3,7 @@ import { EventBus } from './core/eventBus';
 import { ComplianceService } from './modules/compliance/complianceService';
 import { SystemHealthService } from './modules/system/systemHealthService';
 import { InMemoryTransferRepository } from './modules/transfers/inMemoryTransferRepository';
+import { TransferQueue } from './modules/transfers/transferQueue';
 import { TransferLifecycle } from './modules/transfers/transferLifecycle';
 import { WalletService } from './modules/wallets/walletService';
 import { ContractService } from './services/contractService';
@@ -12,6 +13,7 @@ export interface AppContainer {
   eventBus: EventBus;
   services: {
     transfers: TransferLifecycle;
+    transferQueue: TransferQueue;
     wallets: WalletService;
     compliance: ComplianceService;
     health: SystemHealthService;
@@ -26,6 +28,7 @@ export function createContainer(): AppContainer {
   const contracts = new ContractService();
   const transferRepository = new InMemoryTransferRepository();
   const transfers = new TransferLifecycle(transferRepository, wallets, compliance, eventBus);
+  const transferQueue = new TransferQueue(transfers, eventBus);
   const health = new SystemHealthService(compliance, wallets);
 
   return {
@@ -33,6 +36,7 @@ export function createContainer(): AppContainer {
     eventBus,
     services: {
       transfers,
+      transferQueue,
       wallets,
       compliance,
       health,

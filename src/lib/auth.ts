@@ -3,9 +3,15 @@ import { apiFetch } from '@/lib/api';
 
 export type AuthUserDto = AuthUser;
 
+export interface TransactionSigningDto {
+  algorithm: string;
+  secret: string;
+}
+
 export interface AuthMeResponseDto {
   authUser: AuthUserDto;
   user: unknown | null;
+  transactionSigning: TransactionSigningDto;
   onboardingRequired?: boolean;
 }
 
@@ -14,22 +20,26 @@ export interface LoginResponseDto {
   isNewUser: boolean;
   authUser: AuthUserDto;
   user: unknown | null;
+  transactionSigning: TransactionSigningDto;
 }
 
 export interface SignupResponseDto {
   needsVerification: boolean;
   authUser: AuthUserDto;
+  transactionSigning: TransactionSigningDto;
 }
 
 export interface VerifyResponseDto {
   authUser: AuthUserDto;
   user: unknown | null;
+  transactionSigning: TransactionSigningDto;
   onboardingRequired?: boolean;
 }
 
 export interface CompleteOnboardingResponseDto {
   user: unknown;
   authUser: AuthUserDto;
+  transactionSigning: TransactionSigningDto;
 }
 
 export function validateIdentifier(identifier: string): string {
@@ -94,7 +104,7 @@ export async function signup(identifier: string): Promise<SignupResponseDto> {
   });
   await requireOk(res, 'Sign up failed');
   const dto = (await res.json()) as { authUser: AuthUserDto };
-  return { needsVerification: true, authUser: dto.authUser };
+  return { needsVerification: true, authUser: dto.authUser, transactionSigning: (dto as SignupResponseDto).transactionSigning };
 }
 
 export async function verifyCode(code: string): Promise<VerifyResponseDto> {
