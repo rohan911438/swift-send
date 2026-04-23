@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { CreateTransferCommand, TransferRecord } from '../modules/transfers/domain';
+import { requireVerifiedSession } from '../middleware/authenticate';
 
 interface TransferRequest {
   idempotency_key: string;
@@ -19,7 +20,7 @@ interface TransferRequest {
 }
 
 export default async function transferRoutes(fastify: FastifyInstance) {
-  fastify.post('/transfers', async (req, reply) => {
+  fastify.post('/transfers', { preHandler: [requireVerifiedSession] }, async (req, reply) => {
     const body = req.body as TransferRequest;
     try {
       const command = mapRequestToCommand(body);
@@ -31,7 +32,7 @@ export default async function transferRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.get('/transfers/:id', async (req, reply) => {
+  fastify.get('/transfers/:id', { preHandler: [requireVerifiedSession] }, async (req, reply) => {
     const id = (req.params as { id: string }).id;
     const transfer = await fastify.container.services.transfers.getTransfer(id);
     if (!transfer) {
