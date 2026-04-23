@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { User, AuthUser } from '@/types';
-import { currentUser } from '@/data/mockData';
+import React, { createContext, useContext, ReactNode, useEffect, useMemo, useReducer, useCallback } from 'react';
+import type { User, AuthUser } from '@/types';
+import * as authApi from '@/lib/auth';
 
 interface AuthContextType {
   user: User | null;
@@ -20,161 +20,156 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [onboardingStep, setOnboardingStep] = useState(0);
+type AuthStatus = 'idle' | 'bootstrapping' | 'ready';
 
-  const login = async (identifier: string): Promise<{ needsVerification: boolean; isNewUser: boolean }> => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    // Check if user exists (mock logic)
-    const isEmail = identifier.includes('@');
-    const existingUser = isEmail ? 
-      identifier === currentUser.email : 
-      identifier === currentUser.phone;
-    
-    if (existingUser) {
-      // User exists, check verification status
-      const mockAuthUser: AuthUser = {
-        id: currentUser.id,
-        email: isEmail ? identifier : undefined,
-        phone: !isEmail ? identifier : undefined,
-        isVerified: true,
-        hasWallet: true
+interface AuthState {
+  status: AuthStatus;
+  user: User | null;
+  authUser: AuthUser | null;
+  onboardingStep: number;
+}
+
+type AuthAction =
+  | { type: 'BOOTSTRAP_START' }
+  | { type: 'SESSION_APPLY'; authUser: AuthUser; user: User | null; onboardingRequired?: boolean }
+  | { type: 'LOGOUT' }
+  | { type: 'SET_ONBOARDING_STEP'; step: number }
+  | { type: 'UPDATE_BALANCE'; balance: number };
+
+const initialState: AuthState = {
+  status: 'idle',
+  user: null,
+  authUser: null,
+  onboardingStep: 0,
+};
+
+function reducer(state: AuthState, action: AuthAction): AuthState {
+  switch (action.type) {
+    case 'BOOTSTRAP_START':
+      return { ...state, status: 'bootstrapping' };
+    case 'SESSION_APPLY': {
+      const nextOnboardingStep = action.onboardingRequired ? 1 : action.user ? 0 : state.onboardingStep;
+      return {
+        status: 'ready',
+        user: action.user,
+        authUser: action.authUser,
+        onboardingStep: nextOnboardingStep,
       };
-      setAuthUser(mockAuthUser);
-      
-      if (mockAuthUser.isVerified) {
-        // User is verified, log them in
-        setUser(currentUser);
-        return { needsVerification: false, isNewUser: false };
-      } else {
-        return { needsVerification: true, isNewUser: false };
-      }
-    } else {
-      // New user, treat as signup
-      const newAuthUser: AuthUser = {
-        id: `user_${Date.now()}`,
-        email: isEmail ? identifier : undefined,
-        phone: !isEmail ? identifier : undefined,
-        isVerified: false,
-        hasWallet: false
-      };
-      setAuthUser(newAuthUser);
-      return { needsVerification: true, isNewUser: true };
     }
-  };
+    case 'SET_ONBOARDING_STEP':
+      return { ...state, onboardingStep: action.step };
+    case 'UPDATE_BALANCE':
+      return state.user
+        ? { ...state, user: { ...state.user, balance: action.balance, usdcBalance: action.balance } }
+        : state;
+    case 'LOGOUT':
+      return { status: 'ready', user: null, authUser: null, onboardingStep: 0 };
+    default:
+      return state;
+  }
+}
 
-  const signup = async (identifier: string, name?: string): Promise<{ needsVerification: boolean }> => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    const isEmail = identifier.includes('@');
-    const newAuthUser: AuthUser = {
-      id: `user_${Date.now()}`,
-      email: isEmail ? identifier : undefined,
-      phone: !isEmail ? identifier : undefined,
-      isVerified: false,
-      hasWallet: false
+function useAuthBootstrap(dispatch: React.Dispatch<AuthAction>) {
+  useEffect(() => {
+    let cancelled = false;
+    dispatch({ type: 'BOOTSTRAP_START' });
+    (async () => {
+      try {
+        const dto = await authApi.authMe();
+        if (cancelled) return;
+        dispatch({
+          type: 'SESSION_APPLY',
+          authUser: dto.authUser,
+          user: dto.user ? authApi.parseUserDto(dto.user) : null,
+          onboardingRequired: dto.onboardingRequired,
+        });
+      } catch {
+        // not logged in / offline / server down
+        if (cancelled) return;
+        dispatch({ type: 'LOGOUT' });
+      }
+    })();
+    return () => {
+      cancelled = true;
     };
-    setAuthUser(newAuthUser);
+  }, [dispatch]);
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [state, dispatch] = useReducer(reducer, initialState);
+  useAuthBootstrap(dispatch);
+
+  const login = useCallback(async (identifier: string) => {
+    const dto = await authApi.login(identifier);
+    dispatch({
+      type: 'SESSION_APPLY',
+      authUser: dto.authUser,
+      user: dto.user ? authApi.parseUserDto(dto.user) : null,
+      onboardingRequired: false,
+    });
+    if (dto.needsVerification) dispatch({ type: 'SET_ONBOARDING_STEP', step: 0 });
+    return { needsVerification: dto.needsVerification, isNewUser: dto.isNewUser };
+  }, []);
+
+  const signup = useCallback(async (identifier: string, _name?: string) => {
+    const dto = await authApi.signup(identifier);
+    dispatch({ type: 'SESSION_APPLY', authUser: dto.authUser, user: null, onboardingRequired: false });
+    dispatch({ type: 'SET_ONBOARDING_STEP', step: 0 });
     return { needsVerification: true };
-  };
+  }, []);
 
-  const verifyCode = async (code: string) => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    // In development mode (localhost), accept any 6-digit code
-    const isDevelopment = window.location.hostname === 'localhost';
-    const isValidCode = isDevelopment ? code.length === 6 : code === '123456';
-    
-    if (!isValidCode) {
-      throw new Error('Invalid verification code');
-    }
-    
-    if (authUser) {
-      const verifiedAuthUser = { ...authUser, isVerified: true };
-      setAuthUser(verifiedAuthUser);
-      
-      // Check if this is an existing user or new user
-      if (authUser.hasWallet) {
-        // Existing user - load their data
-        setUser(currentUser);
-        setOnboardingStep(0);
-      } else {
-        // New user - start onboarding
-        setOnboardingStep(1);
-      }
-    }
-  };
+  const verifyCode = useCallback(async (code: string) => {
+    const dto = await authApi.verifyCode(code);
+    dispatch({
+      type: 'SESSION_APPLY',
+      authUser: dto.authUser,
+      user: dto.user ? authApi.parseUserDto(dto.user) : null,
+      onboardingRequired: dto.onboardingRequired,
+    });
+  }, []);
 
-  const resendCode = async () => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  };
+  const resendCode = useCallback(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }, []);
 
-  const completeOnboarding = async (userData: Partial<User>) => {
-    // Simulate API call and wallet creation
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    
-    if (authUser) {
-      const newUser: User = {
-        id: authUser.id,
-        name: userData.name || 'User',
-        email: authUser.email || userData.email,
-        phone: authUser.phone || userData.phone || '',
-        balance: 0,
-        isVerified: true,
-        onboardingCompleted: true,
-        walletAddress: `wallet_${authUser.id}`,
-        createdAt: new Date()
-      };
-      
-      setUser(newUser);
-      setOnboardingStep(0);
-    }
-  };
+  const completeOnboarding = useCallback(async (userData: Partial<User>) => {
+    const dto = await authApi.completeOnboarding(userData);
+    dispatch({
+      type: 'SESSION_APPLY',
+      authUser: dto.authUser,
+      user: authApi.parseUserDto(dto.user),
+      onboardingRequired: false,
+    });
+  }, []);
 
-  const logout = () => {
-    setUser(null);
-    setAuthUser(null);
-    setOnboardingStep(0);
-  };
+  const logout = useCallback(() => {
+    void authApi.logout().finally(() => dispatch({ type: 'LOGOUT' }));
+  }, []);
 
-  const updateBalance = (newBalance: number) => {
-    if (user) {
-      setUser({ 
-        ...user, 
-        balance: newBalance, // Update legacy balance for compatibility
-        usdcBalance: newBalance // Update USDC balance
-      });
-    }
-  };
+  const updateBalance = useCallback((newBalance: number) => dispatch({ type: 'UPDATE_BALANCE', balance: newBalance }), []);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        authUser,
-        isAuthenticated: !!user,
-        isVerified: !!authUser?.isVerified,
-        onboardingStep,
-        login,
-        signup,
-        verifyCode,
-        resendCode,
-        completeOnboarding,
-        logout,
-        updateBalance,
-        setOnboardingStep,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const setOnboardingStep = useCallback((step: number) => dispatch({ type: 'SET_ONBOARDING_STEP', step }), []);
+
+  const value = useMemo<AuthContextType>(
+    () => ({
+      user: state.user,
+      authUser: state.authUser,
+      isAuthenticated: !!state.user,
+      isVerified: !!state.authUser?.isVerified,
+      onboardingStep: state.onboardingStep,
+      login,
+      signup,
+      verifyCode,
+      resendCode,
+      completeOnboarding,
+      logout,
+      updateBalance,
+      setOnboardingStep,
+    }),
+    [state, login, signup, verifyCode, resendCode, completeOnboarding, logout, updateBalance, setOnboardingStep]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

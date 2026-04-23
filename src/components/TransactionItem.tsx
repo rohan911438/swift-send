@@ -1,4 +1,5 @@
-import { ArrowUpRight, ArrowDownLeft, Phone, Mail, Receipt } from 'lucide-react';
+import { memo } from 'react';
+import { ArrowUpRight, ArrowDownLeft, Phone, Receipt } from 'lucide-react';
 import { Transaction } from '@/types';
 import { StatusBadge } from './StatusBadge';
 import { cn } from '@/lib/utils';
@@ -10,19 +11,19 @@ interface TransactionItemProps {
   showDetailedView?: boolean;
 }
 
-export function TransactionItem({ transaction, onClick, showDetailedView = false }: TransactionItemProps) {
+function TransactionItemComponent({ transaction, onClick, showDetailedView = false }: TransactionItemProps) {
   const isSend = transaction.type === 'send';
 
   return (
     <button
       onClick={onClick}
-      className="w-full flex flex-col gap-3 p-4 rounded-xl bg-card hover:bg-secondary/50 transition-all duration-200 shadow-card animate-slide-up border border-border/50"
+      className="w-full flex flex-col gap-3 p-3 sm:p-4 rounded-xl bg-card hover:bg-secondary/50 transition-all duration-200 shadow-card animate-slide-up border border-border/50 overflow-hidden"
     >
       {/* Main Transaction Row */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 sm:gap-4 min-w-0">
         <div
           className={cn(
-            'flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center',
+            'flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center',
             isSend ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
           )}
         >
@@ -40,7 +41,7 @@ export function TransactionItem({ transaction, onClick, showDetailedView = false
             </p>
             <span
               className={cn(
-                'font-bold text-lg',
+                'font-bold text-base sm:text-lg',
                 isSend ? 'text-foreground' : 'text-green-600'
               )}
             >
@@ -48,7 +49,7 @@ export function TransactionItem({ transaction, onClick, showDetailedView = false
             </span>
           </div>
           
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Phone className="w-3 h-3" />
               <span className="truncate">{transaction.recipientPhone}</span>
@@ -137,3 +138,5 @@ export function TransactionItem({ transaction, onClick, showDetailedView = false
     </button>
   );
 }
+
+export const TransactionItem = memo(TransactionItemComponent);

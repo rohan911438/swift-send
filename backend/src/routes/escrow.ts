@@ -1,11 +1,12 @@
 import { FastifyInstance } from 'fastify';
+import { requireVerifiedSession } from '../middleware/authenticate';
 
 interface EscrowOverrideBody {
   destination_account?: string;
 }
 
 export default async function escrowRoutes(fastify: FastifyInstance) {
-  fastify.post('/escrow/:transferId/release', async (req, reply) => {
+  fastify.post('/escrow/:transferId/release', { preHandler: [requireVerifiedSession] }, async (req, reply) => {
     const transferId = (req.params as { transferId: string }).transferId;
     const escrow = await fastify.container.services.wallets.getEscrow(transferId);
     if (!escrow) {
@@ -29,7 +30,7 @@ export default async function escrowRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/escrow/:transferId/refund', async (req, reply) => {
+  fastify.post('/escrow/:transferId/refund', { preHandler: [requireVerifiedSession] }, async (req, reply) => {
     const transferId = (req.params as { transferId: string }).transferId;
     const escrow = await fastify.container.services.wallets.getEscrow(transferId);
     if (!escrow) {

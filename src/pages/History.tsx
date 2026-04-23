@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import { ChevronDown, Search, Filter, Calendar, Banknote, TrendingUp, Clock, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,9 +6,11 @@ import { TransactionItem } from '@/components/TransactionItem';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useNavigate } from 'react-router-dom';
+import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import { Bar, BarChart, Cell, Pie, PieChart, XAxis, YAxis } from 'recharts';
 
 const History: React.FC = () => {
   const { user } = useAuth();
@@ -19,9 +21,9 @@ const History: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
 
-  const handleGoBack = () => {
+  const handleGoBack = useCallback(() => {
     navigate(-1); // Go back to previous page
-  };
+  }, [navigate]);
 
   // Calculate summary statistics
   const summary = useMemo(() => {
@@ -43,8 +45,7 @@ const History: React.FC = () => {
   const filteredTransactions = useMemo(() => {
     return (user?.transactions || []).filter(transaction => {
       const matchesSearch = transaction.recipientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           transaction.recipientPhone?.includes(searchTerm) ||
-                           transaction.recipientEmail?.includes(searchTerm);
+                           transaction.recipientPhone?.includes(searchTerm);
       const matchesStatus = statusFilter === 'all' || transaction.status === statusFilter;
       const matchesType = typeFilter === 'all' || transaction.type === typeFilter;
       
@@ -52,11 +53,44 @@ const History: React.FC = () => {
     });
   }, [user?.transactions, searchTerm, statusFilter, typeFilter]);
 
-  const handleTransactionClick = (transactionId: string) => {
-    setExpandedTransactionId(
-      expandedTransactionId === transactionId ? null : transactionId
-    );
-  };
+  const monthlyTransferData = useMemo(() => {
+    const monthlyMap = new Map<string, { month: string; sent: number; received: number }>();
+    (user?.transactions || []).forEach((transaction) => {
+      const date = new Date(transaction.timestamp);
+      const month = date.toLocaleString('en-US', { month: 'short' });
+      if (!monthlyMap.has(month)) {
+        monthlyMap.set(month, { month, sent: 0, received: 0 });
+      }
+      const monthData = monthlyMap.get(month);
+      if (!monthData) return;
+      if (transaction.type === 'send') monthData.sent += transaction.amount;
+      if (transaction.type === 'receive') monthData.received += transaction.amount;
+    });
+
+    return Array.from(monthlyMap.values()).slice(-6);
+  }, [user?.transactions]);
+
+  const categoryData = useMemo(() => {
+    const categoryMap = new Map<string, number>();
+    (user?.transactions || [])
+      .filter((transaction) => transaction.type === 'send')
+      .forEach((transaction) => {
+        const category = transaction.destinationCurrency ? `${transaction.destinationCurrency} transfer` : 'General transfers';
+        categoryMap.set(category, (categoryMap.get(category) ?? 0) + transaction.amount);
+      });
+
+    return Array.from(categoryMap.entries()).map(([category, value]) => ({ category, value }));
+  }, [user?.transactions]);
+
+  const handleTransactionClick = useCallback((transactionId: string) => {
+    setExpandedTransactionId((currentId) => (currentId === transactionId ? null : transactionId));
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    setSearchTerm('');
+    setStatusFilter('all');
+    setTypeFilter('all');
+  }, []);
 
   const statusOptions = [
     { value: 'all', label: 'All Status' },
@@ -72,9 +106,9 @@ const History: React.FC = () => {
   ];
 
   return (
-    <div className="max-w-md mx-auto bg-background min-h-screen pb-20">
+    <div className="mx-auto w-full max-w-3xl bg-background min-h-screen px-3 sm:px-5 lg:px-6 pb-20">
       <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 border-b border-border/50">
-        <div className="p-6 pb-4">
+        <div className="py-6 pb-4">
           {/* Header with back button */}
           <div className="flex items-center gap-4 mb-6">
             <Button 
@@ -127,6 +161,67 @@ const History: React.FC = () => {
                   <span className="text-xs font-medium text-purple-700 dark:text-purple-300">This Month</span>
                 </div>
                 <p className="text-lg font-bold text-purple-900 dark:text-purple-100">{summary.thisMonth}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Analytics Charts */}
+          <div className="grid gap-3 mb-4 lg:grid-cols-2">
+            <Card className="border-border/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Monthly Transfers</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <ChartContainer
+                  className="h-56 w-full"
+                  config={{
+                    sent: { label: 'Sent', color: '#f97316' },
+                    received: { label: 'Received', color: '#16a34a' },
+                  }}
+                >
+                  <BarChart data={monthlyTransferData}>
+                    <XAxis dataKey="month" tickLine={false} axisLine={false} />
+                    <YAxis tickLine={false} axisLine={false} width={32} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Bar dataKey="sent" fill="var(--color-sent)" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="received" fill="var(--color-received)" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ChartContainer>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Spending by Category</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <ChartContainer
+                  className="h-56 w-full"
+                  config={{
+                    value: { label: 'Amount', color: '#6366f1' },
+                  }}
+                >
+                  <PieChart>
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          formatter={(value, _name, item) => (
+                            <div className="flex w-full items-center justify-between gap-2">
+                              <span>{(item.payload as { category: string }).category}</span>
+                              <span className="font-semibold">${Number(value).toFixed(2)}</span>
+                            </div>
+                          )}
+                        />
+                      }
+                    />
+                    <Pie data={categoryData} dataKey="value" nameKey="category" outerRadius={80}>
+                      {categoryData.map((entry, index) => (
+                        <Cell key={`${entry.category}-${index}`} fill={['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7'][index % 6]} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ChartContainer>
               </CardContent>
             </Card>
           </div>
@@ -203,11 +298,7 @@ const History: React.FC = () => {
                 <Button 
                   variant="outline" 
                   size="sm"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setStatusFilter('all');
-                    setTypeFilter('all');
-                  }}
+                  onClick={clearFilters}
                 >
                   Clear filters
                 </Button>
@@ -233,11 +324,7 @@ const History: React.FC = () => {
                 <Button 
                   variant="ghost" 
                   size="sm"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setStatusFilter('all');
-                    setTypeFilter('all');
-                  }}
+                  onClick={clearFilters}
                   className="text-xs"
                 >
                   Clear all

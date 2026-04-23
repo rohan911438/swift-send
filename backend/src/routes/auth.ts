@@ -1,0 +1,209 @@
+import type { FastifyInstance, FastifyReply } from 'fastify';
+import { config, isProd } from '../config';
+import type { JwtSessionPayload, PublicUser } from '../auth/sessionTypes';
+import {
+  createMariaSession,
+  createNewUserSession,
+  deleteSession,
+  getSession,
+  isMariaIdentifier,
+  saveSession,
+} from '../auth/sessionStore';
+import { authenticate } from '../middleware/authenticate';
+
+interface LoginBody {
+  identifier: string;
+}
+
+interface VerifyBody {
+  code: string;
+}
+
+interface OnboardingBody {
+  name?: string;
+  email?: string;
+  phone?: string;
+}
+
+function sessionToAuthUser(session: { id: string; email?: string; phone?: string; verified: boolean; hasWallet: boolean }) {
+  return {
+    id: session.id,
+    email: session.email,
+    phone: session.phone,
+    isVerified: session.verified,
+    hasWallet: session.hasWallet,
+  };
+}
+
+async function setAuthCookie(reply: FastifyReply, session: { id: string; verified: boolean; hasWallet: boolean }) {
+  const payload: JwtSessionPayload = {
+    sub: session.id,
+    verified: session.verified,
+    hasWallet: session.hasWallet,
+  };
+  const token = await reply.jwtSign(payload, { expiresIn: config.auth.jwtExpiresSeconds });
+  reply.setCookie(config.auth.cookieName, token, {
+    path: '/',
+    httpOnly: true,
+    secure: isProd(),
+    sameSite: 'lax',
+    maxAge: config.auth.jwtExpiresSeconds,
+  });
+}
+
+function clearAuthCookie(reply: FastifyReply) {
+  reply.clearCookie(config.auth.cookieName, {
+    path: '/',
+    httpOnly: true,
+    secure: isProd(),
+    sameSite: 'lax',
+  });
+}
+
+function isValidVerificationCode(code: string): boolean {
+  const dev = config.env === 'development' || config.env === 'test';
+  if (dev) return code.length === 6 && /^\d{6}$/.test(code);
+  return code === '123456';
+}
+
+export default async function authRoutes(fastify: FastifyInstance) {
+  fastify.post<{ Body: LoginBody }>('/auth/login', async (request, reply) => {
+    const identifier = request.body?.identifier?.trim();
+    if (!identifier) {
+      return reply.status(400).send({ error: 'identifier is required' });
+    }
+
+    const isEmail = identifier.includes('@');
+
+    if (isMariaIdentifier(identifier)) {
+      const session = createMariaSession();
+      await setAuthCookie(reply, session);
+      return reply.send({
+        needsVerification: false,
+        isNewUser: false,
+        authUser: sessionToAuthUser(session),
+        user: session.user ?? null,
+      });
+    }
+
+    const session = createNewUserSession(isEmail ? identifier.toLowerCase() : undefined, isEmail ? undefined : identifier);
+    await setAuthCookie(reply, session);
+    return reply.send({
+      needsVerification: true,
+      isNewUser: true,
+      authUser: sessionToAuthUser(session),
+      user: null,
+    });
+  });
+
+  /** Sign-up always creates a fresh unverified session (demo; no password). */
+  fastify.post<{ Body: LoginBody }>('/auth/signup', async (request, reply) => {
+    const identifier = request.body?.identifier?.trim();
+    if (!identifier) {
+      return reply.status(400).send({ error: 'identifier is required' });
+    }
+    const isEmail = identifier.includes('@');
+    const session = createNewUserSession(isEmail ? identifier.toLowerCase() : undefined, isEmail ? undefined : identifier);
+    await setAuthCookie(reply, session);
+    return reply.send({
+      needsVerification: true,
+      authUser: sessionToAuthUser(session),
+    });
+  });
+
+  fastify.post<{ Body: VerifyBody }>('/auth/verify', { preHandler: [authenticate] }, async (request, reply) => {
+    const code = request.body?.code?.trim();
+    if (!code) {
+      return reply.status(400).send({ error: 'code is required' });
+    }
+    if (!isValidVerificationCode(code)) {
+      return reply.status(400).send({ error: 'Invalid verification code' });
+    }
+
+    const token = request.user as JwtSessionPayload;
+    const session = getSession(token.sub);
+    if (!session) {
+      clearAuthCookie(reply);
+      return reply.status(401).send({ error: 'Session expired' });
+    }
+
+    session.verified = true;
+    if (!session.hasWallet) {
+      session.onboardingCompleted = false;
+      session.user = undefined;
+    }
+    saveSession(session);
+
+    await setAuthCookie(reply, session);
+
+    return reply.send({
+      authUser: sessionToAuthUser(session),
+      user: session.user ?? null,
+      onboardingRequired: session.verified && !session.onboardingCompleted && !session.user,
+    });
+  });
+
+  fastify.post('/auth/logout', async (request, reply) => {
+    try {
+      await request.jwtVerify({ onlyCookie: true });
+      const token = request.user as JwtSessionPayload;
+      deleteSession(token.sub);
+    } catch {
+      // still clear cookie for the client
+    }
+    clearAuthCookie(reply);
+    return reply.send({ ok: true });
+  });
+
+  fastify.get('/auth/me', { preHandler: [authenticate] }, async (request, reply) => {
+    const token = request.user as JwtSessionPayload;
+    const session = getSession(token.sub);
+    if (!session) {
+      clearAuthCookie(reply);
+      return reply.status(401).send({ error: 'Session expired' });
+    }
+
+    return reply.send({
+      authUser: sessionToAuthUser(session),
+      user: session.user ?? null,
+      onboardingRequired: session.verified && !session.onboardingCompleted && !session.user,
+    });
+  });
+
+  fastify.post<{ Body: OnboardingBody }>('/auth/onboarding/complete', { preHandler: [authenticate] }, async (request, reply) => {
+    const token = request.user as JwtSessionPayload;
+    const session = getSession(token.sub);
+    if (!session) {
+      clearAuthCookie(reply);
+      return reply.status(401).send({ error: 'Session expired' });
+    }
+    if (!session.verified) {
+      return reply.status(403).send({ error: 'Verification required' });
+    }
+
+    const body = request.body || {};
+    const newUser: PublicUser = {
+      id: session.id,
+      name: body.name || 'User',
+      email: session.email || body.email,
+      phone: session.phone || body.phone || '',
+      balance: 0,
+      usdcBalance: 0,
+      localCurrency: 'USD',
+      exchangeRate: 1.0,
+      isVerified: true,
+      onboardingCompleted: true,
+      walletAddress: `wallet_${session.id}`,
+      createdAt: new Date().toISOString(),
+    };
+
+    session.user = newUser;
+    session.hasWallet = true;
+    session.onboardingCompleted = true;
+    saveSession(session);
+
+    await setAuthCookie(reply, session);
+
+    return reply.send({ user: newUser, authUser: sessionToAuthUser(session) });
+  });
+}
