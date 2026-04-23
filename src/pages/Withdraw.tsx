@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { BottomNav } from '@/components/BottomNav';
 import { useAuth } from '@/contexts/AuthContext';
 import { withdrawalMethods, oxxoLocations, contacts } from '@/data/mockData';
+import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { WithdrawalMethod, PickupLocation, Contact } from '@/types';
 import { 
   ArrowLeft, 
@@ -57,11 +58,20 @@ export default function Withdraw() {
   // Get recipient from URL params if coming from send flow
   const recipientId = searchParams.get('recipient');
   
-  const exchangeRates = {
-    'MX': { rate: 17.25, currency: 'MXN' },
-    'PH': { rate: 56.50, currency: 'PHP' },
-    'GT': { rate: 7.85, currency: 'GTQ' },
-    'SV': { rate: 1.00, currency: 'USD' }, // USD official currency
+  const { rates, loading: ratesLoading } = useExchangeRate();
+  
+  const countryToCurrency: Record<string, string> = {
+    'MX': 'MXN',
+    'PH': 'PHP',
+    'GT': 'GTQ',
+    'SV': 'USD',
+  };
+
+  const getRecipientCurrency = (countryCode: string) => countryToCurrency[countryCode] || 'USD';
+  
+  const getExchangeRate = (countryCode: string) => {
+    const currency = getRecipientCurrency(countryCode);
+    return rates[currency] || 1;
   };
 
   const getAvailableMethods = (countryCode: string) => {
@@ -70,9 +80,13 @@ export default function Withdraw() {
     );
   };
 
-  const recipientExchange = selectedRecipient 
-    ? exchangeRates[selectedRecipient.countryCode] || { rate: 1, currency: 'USD' }
-    : { rate: 1, currency: 'USD' };
+  const recipientCurrency = selectedRecipient ? getRecipientCurrency(selectedRecipient.countryCode) : 'USD';
+  const recipientRate = selectedRecipient ? getExchangeRate(selectedRecipient.countryCode) : 1;
+  
+  const recipientExchange = {
+    rate: recipientRate,
+    currency: recipientCurrency
+  };
 
   const fees = useMemo(() => {
     if (!selectedMethod || !amount) return { fee: 0, total: parseFloat(amount) || 0, recipient: 0 };
@@ -183,10 +197,10 @@ export default function Withdraw() {
               </div>
               <div className="text-right">
                 <p className="text-sm font-medium">
-                  {exchangeRates[contact.countryCode]?.currency || 'USD'}
+                  {getRecipientCurrency(contact.countryCode)}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  1 USD = {exchangeRates[contact.countryCode]?.rate || 1} {exchangeRates[contact.countryCode]?.currency || 'USD'}
+                  1 USD = {getExchangeRate(contact.countryCode).toFixed(2)} {getRecipientCurrency(contact.countryCode)}
                 </p>
               </div>
             </div>

@@ -11,13 +11,15 @@ import { ComplianceDashboard } from '@/components/ComplianceDashboard';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
 import { transactions } from '@/data/mockData';
+import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { Send, Plus, Bell, ArrowRight, Shield, Info, Zap, Clock, TrendingDown, Star, CheckCircle2, Globe2, Award, Wallet, ExternalLink, MapPin } from 'lucide-react';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { connectionState } = useWallet();
-  const [showWalletDialog, setShowWalletDialog] = useState(false);
+  const { rates } = useExchangeRate();
+  const currentExchangeRate = rates[user?.localCurrency || 'USD'] || 1.0;
 
   const recentTransactions = transactions.slice(0, 3);
   const isNewUser = user?.createdAt && 
@@ -96,7 +98,7 @@ export default function Dashboard() {
           <BalanceCard 
             usdcBalance={user?.usdcBalance || 0}
             localCurrency={user?.localCurrency || 'USD'}
-            exchangeRate={user?.exchangeRate || 1.0}
+            exchangeRate={currentExchangeRate}
           />
 
           {/* Compliance Dashboard - Compact View */}

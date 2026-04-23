@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
 import { useCompliance } from '@/contexts/ComplianceContext';
 import { contacts, calculateFees } from '@/data/mockData';
+import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { Contact, TransactionPreview } from '@/types';
 import { ArrowLeft, ArrowRight, Search, DollarSign, Send, CheckCircle2, UserPlus, Mail, Phone, MessageCircle, Shield, Zap, Globe2, Star, Wallet, MapPin, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -42,6 +43,22 @@ export default function SendMoney() {
   const [showWalletSigning, setShowWalletSigning] = useState(false);
   const [transactionPreview, setTransactionPreview] = useState<TransactionPreview | null>(null);
   const [useExternalWallet, setUseExternalWallet] = useState(false);
+  const { rates, convert } = useExchangeRate();
+
+  const countryToCurrency: Record<string, string> = {
+    'MX': 'MXN',
+    'PH': 'PHP',
+    'GT': 'GTQ',
+    'SV': 'USD',
+  };
+
+  const getRecipientCurrency = (contact: Contact | null) => {
+    if (!contact) return 'USD';
+    return countryToCurrency[contact.countryCode] || 'USD';
+  };
+
+  const recipientCurrency = useMemo(() => getRecipientCurrency(selectedContact), [selectedContact]);
+  const convertedAmount = useMemo(() => convert(amountValue, recipientCurrency), [amountValue, recipientCurrency, convert]);
 
   const filteredContacts = useMemo(
     () =>
@@ -422,6 +439,17 @@ export default function SendMoney() {
                   />
                   <span className="text-xl sm:text-2xl font-semibold text-muted-foreground">USDC</span>
                 </div>
+
+                {amountValue > 0 && recipientCurrency !== 'USD' && (
+                  <div className="flex items-center justify-center gap-2 mb-4 animate-fade-in">
+                    <p className="text-lg font-medium text-primary">
+                      ≈ {convertedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {recipientCurrency}
+                    </p>
+                    <span className="text-xs text-muted-foreground">
+                      (1 USDC = {rates[recipientCurrency]?.toFixed(2)} {recipientCurrency})
+                    </span>
+                  </div>
+                )}
                 
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 text-sm">
                   <p className="text-muted-foreground">
