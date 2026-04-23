@@ -8,6 +8,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isVerified: boolean;
   onboardingStep: number;
+  transactionSigningSecret: string | null;
   login: (identifier: string) => Promise<{ needsVerification: boolean; isNewUser: boolean }>;
   signup: (identifier: string, name?: string) => Promise<{ needsVerification: boolean }>;
   verifyCode: (code: string) => Promise<void>;
@@ -27,11 +28,12 @@ interface AuthState {
   user: User | null;
   authUser: AuthUser | null;
   onboardingStep: number;
+  transactionSigningSecret: string | null;
 }
 
 type AuthAction =
   | { type: 'BOOTSTRAP_START' }
-  | { type: 'SESSION_APPLY'; authUser: AuthUser; user: User | null; onboardingRequired?: boolean }
+  | { type: 'SESSION_APPLY'; authUser: AuthUser; user: User | null; transactionSigningSecret: string; onboardingRequired?: boolean }
   | { type: 'LOGOUT' }
   | { type: 'SET_ONBOARDING_STEP'; step: number }
   | { type: 'UPDATE_BALANCE'; balance: number };
@@ -41,6 +43,7 @@ const initialState: AuthState = {
   user: null,
   authUser: null,
   onboardingStep: 0,
+  transactionSigningSecret: null,
 };
 
 function reducer(state: AuthState, action: AuthAction): AuthState {
@@ -54,6 +57,7 @@ function reducer(state: AuthState, action: AuthAction): AuthState {
         user: action.user,
         authUser: action.authUser,
         onboardingStep: nextOnboardingStep,
+        transactionSigningSecret: action.transactionSigningSecret,
       };
     }
     case 'SET_ONBOARDING_STEP':
@@ -63,7 +67,7 @@ function reducer(state: AuthState, action: AuthAction): AuthState {
         ? { ...state, user: { ...state.user, balance: action.balance, usdcBalance: action.balance } }
         : state;
     case 'LOGOUT':
-      return { status: 'ready', user: null, authUser: null, onboardingStep: 0 };
+      return { status: 'ready', user: null, authUser: null, onboardingStep: 0, transactionSigningSecret: null };
     default:
       return state;
   }
@@ -81,6 +85,7 @@ function useAuthBootstrap(dispatch: React.Dispatch<AuthAction>) {
           type: 'SESSION_APPLY',
           authUser: dto.authUser,
           user: dto.user ? authApi.parseUserDto(dto.user) : null,
+          transactionSigningSecret: dto.transactionSigning.secret,
           onboardingRequired: dto.onboardingRequired,
         });
       } catch {
@@ -105,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       type: 'SESSION_APPLY',
       authUser: dto.authUser,
       user: dto.user ? authApi.parseUserDto(dto.user) : null,
+      transactionSigningSecret: dto.transactionSigning.secret,
       onboardingRequired: false,
     });
     if (dto.needsVerification) dispatch({ type: 'SET_ONBOARDING_STEP', step: 0 });
@@ -113,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = useCallback(async (identifier: string, _name?: string) => {
     const dto = await authApi.signup(identifier);
-    dispatch({ type: 'SESSION_APPLY', authUser: dto.authUser, user: null, onboardingRequired: false });
+    dispatch({ type: 'SESSION_APPLY', authUser: dto.authUser, user: null, transactionSigningSecret: dto.transactionSigning.secret, onboardingRequired: false });
     dispatch({ type: 'SET_ONBOARDING_STEP', step: 0 });
     return { needsVerification: true };
   }, []);
@@ -124,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       type: 'SESSION_APPLY',
       authUser: dto.authUser,
       user: dto.user ? authApi.parseUserDto(dto.user) : null,
+      transactionSigningSecret: dto.transactionSigning.secret,
       onboardingRequired: dto.onboardingRequired,
     });
   }, []);
@@ -138,6 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       type: 'SESSION_APPLY',
       authUser: dto.authUser,
       user: authApi.parseUserDto(dto.user),
+      transactionSigningSecret: dto.transactionSigning.secret,
       onboardingRequired: false,
     });
   }, []);
@@ -157,6 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: !!state.user,
       isVerified: !!state.authUser?.isVerified,
       onboardingStep: state.onboardingStep,
+      transactionSigningSecret: state.transactionSigningSecret,
       login,
       signup,
       verifyCode,

@@ -10,6 +10,7 @@ import { CompliancePreCheck } from '@/components/ComplianceCheck';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
 import { useCompliance } from '@/contexts/ComplianceContext';
+import { createTransfer } from '@/lib/transfers';
 import { contacts, calculateFees } from '@/data/mockData';
 import { Contact, TransactionPreview } from '@/types';
 import { ArrowLeft, ArrowRight, Search, DollarSign, Send, CheckCircle2, UserPlus, Mail, Phone, MessageCircle, Shield, Zap, Globe2, Star, Wallet, MapPin, AlertTriangle } from 'lucide-react';
@@ -23,13 +24,17 @@ interface NewRecipient {
   type: 'email' | 'phone';
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Transfer failed';
+}
+
 const MAX_TRANSFER_AMOUNT = 5000;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\+?[1-9]\d{8,14}$/;
 
 export default function SendMoney() {
   const navigate = useNavigate();
-  const { user, updateBalance } = useAuth();
+  const { user, transactionSigningSecret } = useAuth();
   const { connectionState } = useWallet();
   const { checkTransactionCompliance } = useCompliance();
   const [step, setStep] = useState<Step>('recipient');
@@ -137,30 +142,37 @@ export default function SendMoney() {
 
     // Standard managed wallet transaction
     setIsProcessing(true);
-    
-    // Simulate blockchain transaction
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    
-    updateBalance((user?.usdcBalance || 0) - amountValue);
-    
-    setIsProcessing(false);
-    setStep('success');
-    
-    toast.success('Transfer completed successfully!');
+
+    try {
+      await submitTransfer();
+      setStep('success');
+      toast.success('Transfer submitted successfully');
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const handleWalletTransactionSuccess = (txHash: string) => {
+  const handleWalletTransactionSuccess = async (txHash: string) => {
     setShowWalletSigning(false);
-    setIsProcessing(false);
-    setStep('success');
-    
-    toast.success('Transfer completed with external wallet!', {
-      description: `Transaction hash: ${txHash.slice(0, 8)}...`,
-      action: {
-        label: 'View Explorer',
-        onClick: () => window.open(`https://stellar.expert/explorer/public/tx/${txHash}`, '_blank')
-      }
-    });
+    setIsProcessing(true);
+
+    try {
+      await submitTransfer({ externalWalletTxHash: txHash });
+      setStep('success');
+      toast.success('Transfer completed with external wallet!', {
+        description: `Transaction hash: ${txHash.slice(0, 8)}...`,
+        action: {
+          label: 'View Explorer',
+          onClick: () => window.open(`https://stellar.expert/explorer/public/tx/${txHash}`, '_blank')
+        }
+      });
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleWalletTransactionError = (error: string) => {
@@ -170,6 +182,45 @@ export default function SendMoney() {
       description: error
     });
   };
+
+  const submitTransfer = useCallback(async (extraMetadata?: Record<string, unknown>) => {
+    if (!user) {
+      throw new Error('You must be signed in to send money');
+    }
+    if (!transactionSigningSecret) {
+      throw new Error('Transaction signing is not available for this session');
+    }
+
+    const recipientName = selectedContact?.name || newRecipient?.name || 'Recipient';
+    const recipientIdentifier = selectedContact?.phone || newRecipient?.identifier || '';
+
+    await createTransfer(
+      {
+        idempotency_key: `transfer_${Date.now()}`,
+        from_wallet_id: user.walletAddress || user.id,
+        user_id: user.id,
+        amount: amountValue,
+        currency: 'USDC',
+        recipient: {
+          type: 'cash_pickup',
+          country: selectedContact?.country || 'US',
+          metadata: {
+            identifier: recipientIdentifier,
+            name: recipientName,
+            source: newRecipient ? newRecipient.type : 'recent_contact',
+          },
+        },
+        compliance_tier: user.complianceTier,
+        metadata: {
+          initiated_from: 'send_money_page',
+          network_fee: fees.networkFee,
+          service_fee: fees.serviceFee,
+          ...(extraMetadata || {}),
+        },
+      },
+      transactionSigningSecret
+    );
+  }, [amountValue, fees.networkFee, fees.serviceFee, newRecipient, selectedContact, transactionSigningSecret, user]);
 
   const handleBack = useCallback(() => {
     if (step === 'amount') {
