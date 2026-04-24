@@ -10,7 +10,7 @@ import { CompliancePreCheck } from '@/components/ComplianceCheck';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
 import { useCompliance } from '@/contexts/ComplianceContext';
-import { contacts, calculateFees } from '@/data/mockData';
+import { contacts } from '@/data/mockData';
 import { Contact, TransactionPreview } from '@/types';
 import { ArrowLeft, ArrowRight, Search, DollarSign, Send, CheckCircle2, UserPlus, Mail, Phone, MessageCircle, Shield, Zap, Globe2, Star, Wallet, MapPin, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -26,6 +26,20 @@ interface NewRecipient {
 const MAX_TRANSFER_AMOUNT = 5000;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\+?[1-9]\d{8,14}$/;
+
+const calculateFees = (amount: number) => {
+  const networkFee = 0.0001;
+  const serviceFee = amount * 0.005;
+  const totalFee = networkFee + serviceFee;
+  const recipientGets = Math.max(0, amount - totalFee);
+
+  return {
+    networkFee,
+    serviceFee,
+    totalFee,
+    recipientGets,
+  };
+};
 
 export default function SendMoney() {
   const navigate = useNavigate();
