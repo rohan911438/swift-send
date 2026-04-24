@@ -35,6 +35,13 @@ function sessionToAuthUser(session: { id: string; email?: string; phone?: string
   };
 }
 
+function sessionToTransactionSigning(session: { transactionSigningSecret: string }) {
+  return {
+    algorithm: 'HMAC-SHA-256',
+    secret: session.transactionSigningSecret,
+  };
+}
+
 async function setAuthCookie(reply: FastifyReply, session: { id: string; verified: boolean; hasWallet: boolean }) {
   const payload: JwtSessionPayload = {
     sub: session.id,
@@ -82,6 +89,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         needsVerification: false,
         isNewUser: false,
         authUser: sessionToAuthUser(session),
+        transactionSigning: sessionToTransactionSigning(session),
         user: session.user ?? null,
       });
     }
@@ -92,6 +100,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       needsVerification: true,
       isNewUser: true,
       authUser: sessionToAuthUser(session),
+      transactionSigning: sessionToTransactionSigning(session),
       user: null,
     });
   });
@@ -108,6 +117,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
     return reply.send({
       needsVerification: true,
       authUser: sessionToAuthUser(session),
+      transactionSigning: sessionToTransactionSigning(session),
     });
   });
 
@@ -138,6 +148,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
     return reply.send({
       authUser: sessionToAuthUser(session),
+      transactionSigning: sessionToTransactionSigning(session),
       user: session.user ?? null,
       onboardingRequired: session.verified && !session.onboardingCompleted && !session.user,
     });
@@ -165,6 +176,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
     return reply.send({
       authUser: sessionToAuthUser(session),
+      transactionSigning: sessionToTransactionSigning(session),
       user: session.user ?? null,
       onboardingRequired: session.verified && !session.onboardingCompleted && !session.user,
     });
@@ -204,6 +216,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
     await setAuthCookie(reply, session);
 
-    return reply.send({ user: newUser, authUser: sessionToAuthUser(session) });
+    return reply.send({ user: newUser, authUser: sessionToAuthUser(session), transactionSigning: sessionToTransactionSigning(session) });
   });
 }

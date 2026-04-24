@@ -8,6 +8,7 @@ import { BottomNav } from '@/components/BottomNav';
 import { useAuth } from '@/contexts/AuthContext';
 import { fundingMethods } from '@/data/mockData';
 import { FundingMethod } from '@/types';
+import { calculateFundingFees } from '@/lib/fees';
 import { 
   ArrowLeft, 
   Building2, 
@@ -53,19 +54,8 @@ export default function AddFunds() {
   );
 
   const fees = useMemo(() => {
-    if (!selectedMethod || !amount) return { fee: 0, total: parseFloat(amount) || 0 };
-    
-    const parsedAmount = parseFloat(amount) || 0;
-    let fee = 0;
-    
-    if (selectedMethod.fees.fixed) fee += selectedMethod.fees.fixed;
-    if (selectedMethod.fees.percentage) fee += (parsedAmount * selectedMethod.fees.percentage / 100);
-    
-    return {
-      fee: Math.round(fee * 100) / 100,
-      total: Math.round((parsedAmount + fee) * 100) / 100,
-      net: parsedAmount
-    };
+    if (!selectedMethod || !amount) return { fee: 0, total: parseFloat(amount) || 0, net: parseFloat(amount) || 0 };
+    return calculateFundingFees(parseFloat(amount) || 0, selectedMethod);
   }, [selectedMethod, amount]);
 
   const handleMethodSelect = (method: FundingMethod) => {
@@ -233,6 +223,7 @@ export default function AddFunds() {
           <label className="block text-sm font-medium mb-2">Amount (USD)</label>
           <Input
             type="number"
+            inputMode="decimal"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0.00"
@@ -408,7 +399,7 @@ export default function AddFunds() {
   );
 
   return (
-    <div className="min-h-screen bg-background pb-24">
+    <div className="min-h-screen bg-background pb-32">
       <main className="px-6 pt-6">
         <div className="max-w-lg mx-auto">
           {step === 'method' && renderMethodSelection()}

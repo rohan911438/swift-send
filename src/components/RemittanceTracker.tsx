@@ -12,7 +12,11 @@ import {
   Navigation,
   ExternalLink,
   Truck,
-  Building2
+  Building2,
+  Share2,
+  Twitter,
+  Linkedin,
+  Send as SendIcon
 } from 'lucide-react';
 import { PickupLocation } from '@/types';
 import { toast } from 'sonner';
@@ -109,6 +113,35 @@ export function RemittanceTracker({
   const copyConfirmationCode = () => {
     navigator.clipboard.writeText(confirmationCode);
     toast.success('Confirmation code copied');
+  };
+
+  const handleShare = (platform: string) => {
+    const url = window.location.href; // In a real app, this might be a tracking link
+    const title = `Transfer to ${recipientName} is ${statusInfo.label}`;
+    const text = `I just sent ${amount} ${currency} to ${recipientName} using SwiftSend. Status: ${statusInfo.label}.`;
+    
+    switch (platform) {
+      case 'twitter':
+        window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank');
+        break;
+      case 'linkedin':
+        window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`, '_blank');
+        break;
+      case 'telegram':
+        window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
+        break;
+      case 'copy':
+        navigator.clipboard.writeText(`Transfer ID: ${transferId}\nAmount: ${amount} ${currency}\nStatus: ${statusInfo.label}\nCode: ${confirmationCode}`);
+        toast.success('Transfer details copied');
+        break;
+      case 'native':
+        if (navigator.share) {
+          navigator.share({ title, text, url }).catch(console.error);
+        } else {
+          handleShare('copy');
+        }
+        break;
+    }
   };
 
   const statusInfo = getStatusInfo();
@@ -299,12 +332,27 @@ export function RemittanceTracker({
             <Phone className="w-4 h-4 mr-2" />
             Contact Support
           </Button>
+          <Button variant="outline" className="flex-1" onClick={() => handleShare('native')}>
+            <Share2 className="w-4 h-4 mr-2" />
+            Share
+          </Button>
           {status === 'ready_for_pickup' && method === 'cash_pickup' && (
             <Button variant="outline" className="flex-1">
               <ExternalLink className="w-4 h-4 mr-2" />
               Find Locations
             </Button>
           )}
+        </div>
+        <div className="flex gap-2 justify-center mt-2 opacity-60 hover:opacity-100 transition-opacity">
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleShare('twitter')}>
+            <Twitter className="w-3 h-3" />
+          </Button>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleShare('linkedin')}>
+            <Linkedin className="w-3 h-3" />
+          </Button>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleShare('telegram')}>
+            <SendIcon className="w-3 h-3" />
+          </Button>
         </div>
       </CardContent>
     </Card>

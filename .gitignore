@@ -25,3 +25,5 @@ target/
 *.njsproj
 *.sln
 *.sw?
+issue.md
+pr.md

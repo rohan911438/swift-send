@@ -20,6 +20,7 @@ import {
 import { TransactionPreview, WalletTransaction } from '@/types';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { StatusBadge } from './StatusBadge';
 
 interface TransactionSigningDialogProps {
   isOpen: boolean;
@@ -27,6 +28,13 @@ interface TransactionSigningDialogProps {
   transaction: TransactionPreview;
   onSuccess: (txHash: string) => void;
   onError: (error: string) => void;
+}
+
+function mapWalletStatusToUiStatus(status: WalletTransaction['status']) {
+  if (status === 'success') return 'completed' as const;
+  if (status === 'submitted') return 'processing' as const;
+  if (status === 'pending') return 'pending' as const;
+  return 'failed' as const;
 }
 
 export default function TransactionSigningDialog({
@@ -381,12 +389,7 @@ export function WalletTransactionHistory() {
             <div key={tx.id} className="p-3 border rounded-lg">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <Badge 
-                    variant={tx.status === 'success' ? 'default' : tx.status === 'pending' ? 'secondary' : 'destructive'}
-                    className="text-xs"
-                  >
-                    {tx.status}
-                  </Badge>
+                  <StatusBadge status={mapWalletStatusToUiStatus(tx.status)} />
                   <span className="text-sm font-medium">
                     {tx.amount} {tx.asset}
                   </span>

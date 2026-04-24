@@ -1,5 +1,6 @@
 import { ComplianceDecisionResult } from '../compliance/complianceService';
 import type { COMPLIANCE_TIERS } from '../compliance/tiers';
+import type { FraudAssessment } from '../fraud/fraudService';
 
 export type TransferState =
   | 'created'
@@ -35,6 +36,7 @@ export interface TransferRecord {
   statusHistory: TransferStatusEntry[];
   escrowId?: string;
   compliance: ComplianceDecisionResult;
+  fraud?: FraudAssessment;
   processingAttempts: number;
   lastError?: string;
   metadata?: Record<string, unknown>;
