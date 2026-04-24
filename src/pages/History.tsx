@@ -18,6 +18,9 @@ const History: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<string>('all');
+  const [amountFilter, setAmountFilter] = useState<string>('all');
+  const [sortOrder, setSortOrder] = useState<string>('latest');
   const [showFilters, setShowFilters] = useState(false);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
 
@@ -43,15 +46,49 @@ const History: React.FC = () => {
 
   // Filter transactions based on search and filters
   const filteredTransactions = useMemo(() => {
-    return (user?.transactions || []).filter(transaction => {
-      const matchesSearch = transaction.recipientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           transaction.recipientPhone?.includes(searchTerm);
+    let filtered = (user?.transactions || []).filter(transaction => {
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = transaction.recipientName.toLowerCase().includes(searchLower) ||
+                           transaction.recipientPhone?.includes(searchTerm) ||
+                           transaction.id.toLowerCase().includes(searchLower);
+                           
       const matchesStatus = statusFilter === 'all' || transaction.status === statusFilter;
       const matchesType = typeFilter === 'all' || transaction.type === typeFilter;
       
-      return matchesSearch && matchesStatus && matchesType;
+      let matchesDate = true;
+      if (dateFilter !== 'all') {
+        const txDate = new Date(transaction.timestamp);
+        const now = new Date();
+        if (dateFilter === 'last7days') {
+          const sevenDaysAgo = new Date(now.setDate(now.getDate() - 7));
+          matchesDate = txDate >= sevenDaysAgo;
+        } else if (dateFilter === 'thisMonth') {
+          matchesDate = txDate.getMonth() === now.getMonth() && txDate.getFullYear() === now.getFullYear();
+        } else if (dateFilter === 'thisYear') {
+          matchesDate = txDate.getFullYear() === now.getFullYear();
+        }
+      }
+
+      let matchesAmount = true;
+      if (amountFilter !== 'all') {
+        if (amountFilter === 'under50') matchesAmount = transaction.amount < 50;
+        else if (amountFilter === '50to200') matchesAmount = transaction.amount >= 50 && transaction.amount <= 200;
+        else if (amountFilter === 'over200') matchesAmount = transaction.amount > 200;
+      }
+      
+      return matchesSearch && matchesStatus && matchesType && matchesDate && matchesAmount;
     });
-  }, [user?.transactions, searchTerm, statusFilter, typeFilter]);
+
+    filtered.sort((a, b) => {
+      if (sortOrder === 'latest') return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      if (sortOrder === 'oldest') return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+      if (sortOrder === 'highest') return b.amount - a.amount;
+      if (sortOrder === 'lowest') return a.amount - b.amount;
+      return 0;
+    });
+
+    return filtered;
+  }, [user?.transactions, searchTerm, statusFilter, typeFilter, dateFilter, amountFilter, sortOrder]);
 
   const monthlyTransferData = useMemo(() => {
     const monthlyMap = new Map<string, { month: string; sent: number; received: number }>();
@@ -90,6 +127,9 @@ const History: React.FC = () => {
     setSearchTerm('');
     setStatusFilter('all');
     setTypeFilter('all');
+    setDateFilter('all');
+    setAmountFilter('all');
+    setSortOrder('latest');
   }, []);
 
   const statusOptions = [
@@ -103,6 +143,20 @@ const History: React.FC = () => {
     { value: 'all', label: 'All Types' },
     { value: 'send', label: 'Sent' },
     { value: 'receive', label: 'Received' }
+  ];
+
+  const dateOptions = [
+    { value: 'all', label: 'All Time' },
+    { value: 'last7days', label: 'Last 7 Days' },
+    { value: 'thisMonth', label: 'This Month' },
+    { value: 'thisYear', label: 'This Year' }
+  ];
+
+  const amountOptions = [
+    { value: 'all', label: 'Any Amount' },
+    { value: 'under50', label: 'Under $50' },
+    { value: '50to200', label: '$50 - $200' },
+    { value: 'over200', label: 'Over $200' }
   ];
 
   return (
@@ -237,48 +291,103 @@ const History: React.FC = () => {
             />
           </div>
 
-          {/* Filters */}
+          {/* Filters and Sorting */}
           <Collapsible open={showFilters} onOpenChange={setShowFilters}>
             <CollapsibleTrigger asChild>
               <Button variant="outline" size="sm" className="w-full justify-between">
                 <div className="flex items-center gap-2">
                   <Filter className="w-4 h-4" />
-                  <span>Filters</span>
-                  {(statusFilter !== 'all' || typeFilter !== 'all') && (
+                  <span>Filters & Sort</span>
+                  {(statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all' || amountFilter !== 'all' || sortOrder !== 'latest') && (
                     <Badge variant="secondary" className="text-xs">
-                      {[statusFilter, typeFilter].filter(f => f !== 'all').length}
+                      {[statusFilter, typeFilter, dateFilter, amountFilter].filter(f => f !== 'all').length + (sortOrder !== 'latest' ? 1 : 0)}
                     </Badge>
                   )}
                 </div>
                 <ChevronDown className={cn('w-4 h-4 transition-transform', showFilters && 'rotate-180')} />
               </Button>
             </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-3 mt-3">
-              <div className="flex gap-2 flex-wrap">
-                {statusOptions.map((option) => (
-                  <Button
-                    key={option.value}
-                    variant={statusFilter === option.value ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setStatusFilter(option.value)}
-                    className="text-xs"
-                  >
-                    {option.label}
-                  </Button>
-                ))}
+            <CollapsibleContent className="space-y-4 mt-3">
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Status & Type</p>
+                <div className="flex gap-2 flex-wrap">
+                  {statusOptions.map((option) => (
+                    <Button
+                      key={option.value}
+                      variant={statusFilter === option.value ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setStatusFilter(option.value)}
+                      className="text-xs"
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {typeOptions.map((option) => (
+                    <Button
+                      key={option.value}
+                      variant={typeFilter === option.value ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setTypeFilter(option.value)}
+                      className="text-xs"
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
               </div>
-              <div className="flex gap-2 flex-wrap">
-                {typeOptions.map((option) => (
-                  <Button
-                    key={option.value}
-                    variant={typeFilter === option.value ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setTypeFilter(option.value)}
-                    className="text-xs"
-                  >
-                    {option.label}
-                  </Button>
-                ))}
+              
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Date & Amount</p>
+                <div className="flex gap-2 flex-wrap">
+                  {dateOptions.map((option) => (
+                    <Button
+                      key={option.value}
+                      variant={dateFilter === option.value ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setDateFilter(option.value)}
+                      className="text-xs"
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {amountOptions.map((option) => (
+                    <Button
+                      key={option.value}
+                      variant={amountFilter === option.value ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setAmountFilter(option.value)}
+                      className="text-xs"
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Sort Order</p>
+                <div className="flex gap-2 flex-wrap">
+                  {[
+                    { value: 'latest', label: 'Latest First' },
+                    { value: 'oldest', label: 'Oldest First' },
+                    { value: 'highest', label: 'Highest Amount' },
+                    { value: 'lowest', label: 'Lowest Amount' }
+                  ].map((option) => (
+                     <Button
+                      key={option.value}
+                      variant={sortOrder === option.value ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setSortOrder(option.value)}
+                      className="text-xs"
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
               </div>
             </CollapsibleContent>
           </Collapsible>
@@ -288,7 +397,7 @@ const History: React.FC = () => {
       <div className="p-6 pt-2">
         {filteredTransactions.length === 0 ? (
           <div className="text-center py-12">
-            {searchTerm || statusFilter !== 'all' || typeFilter !== 'all' ? (
+            {searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all' || amountFilter !== 'all' || sortOrder !== 'latest' ? (
               <div className="space-y-3">
                 <div className="text-4xl">🔍</div>
                 <h3 className="text-lg font-semibold text-foreground">No transactions found</h3>
@@ -320,7 +429,7 @@ const History: React.FC = () => {
               <p className="text-sm text-muted-foreground">
                 {filteredTransactions.length} transaction{filteredTransactions.length !== 1 ? 's' : ''}
               </p>
-              {(searchTerm || statusFilter !== 'all' || typeFilter !== 'all') && (
+              {(searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all' || amountFilter !== 'all' || sortOrder !== 'latest') && (
                 <Button 
                   variant="ghost" 
                   size="sm"

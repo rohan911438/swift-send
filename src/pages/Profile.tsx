@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { BottomNav } from '@/components/BottomNav';
 import WalletConnectionDialog, { WalletStatusIndicator } from '@/components/WalletConnection';
@@ -23,6 +24,7 @@ import { toast } from 'sonner';
 
 export default function Profile() {
   const navigate = useNavigate();
+  const { resolvedTheme, setTheme } = useTheme();
   const { user, logout } = useAuth();
   const { connectionState, disconnectWallet } = useWallet();
   const [showWalletDialog, setShowWalletDialog] = useState(false);
@@ -84,6 +86,16 @@ export default function Profile() {
           <div className="bg-card rounded-2xl p-5 shadow-soft animate-slide-up">
             <h2 className="font-semibold text-foreground mb-4">Account Details</h2>
             <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">Theme</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+                >
+                  {resolvedTheme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
+                </Button>
+              </div>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
                   <Phone className="w-5 h-5 text-muted-foreground" />

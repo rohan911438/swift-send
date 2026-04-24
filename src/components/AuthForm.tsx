@@ -173,6 +173,7 @@ export default function AuthForm({ onNeedsVerification }: AuthFormProps) {
                   <Input
                     id="identifier"
                     type="text"
+                    inputMode={inputType === 'email' ? 'email' : inputType === 'phone' ? 'tel' : 'text'}
                     placeholder={getPlaceholder()}
                     value={identifier}
                     onChange={handleInputChange}
