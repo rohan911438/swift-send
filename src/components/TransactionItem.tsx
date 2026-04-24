@@ -4,6 +4,7 @@ import { Transaction } from '@/types';
 import { StatusBadge } from './StatusBadge';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
+import { splitFee } from '@/lib/fees';
 
 interface TransactionItemProps {
   transaction: Transaction;
@@ -13,6 +14,7 @@ interface TransactionItemProps {
 
 function TransactionItemComponent({ transaction, onClick, showDetailedView = false }: TransactionItemProps) {
   const isSend = transaction.type === 'send';
+  const feeSplit = splitFee(transaction.fee, { network: 0.1, service: 0.9 });
 
   return (
     <button
@@ -93,11 +95,11 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Network fee</span>
-                  <span className="font-medium">${(transaction.fee * 0.1).toFixed(3)}</span>
+                  <span className="font-medium">${feeSplit.networkFee.toFixed(3)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Service fee</span>
-                  <span className="font-medium">${(transaction.fee * 0.9).toFixed(2)}</span>
+                  <span className="font-medium">${feeSplit.serviceFee.toFixed(2)}</span>
                 </div>
                 <div className="border-t border-border/50 pt-1 mt-2">
                   <div className="flex justify-between font-semibold">

@@ -422,16 +422,4 @@ export const oxxoLocations: PickupLocation[] = [
   }
 ];
 
-export const calculateFees = (amount: number): { networkFee: number; serviceFee: number; totalFee: number; recipientGets: number } => {
-  const networkFee = 0.001; // Stellar network fee (near zero)
-  const serviceFee = amount * 0.002; // 0.2% service fee
-  const totalFee = networkFee + serviceFee;
-  const recipientGets = amount - totalFee;
-  
-  return {
-    networkFee: Math.round(networkFee * 100) / 100,
-    serviceFee: Math.round(serviceFee * 100) / 100,
-    totalFee: Math.round(totalFee * 100) / 100,
-    recipientGets: Math.round(recipientGets * 100) / 100,
-  };
-};
+// Fee logic moved to `src/lib/fees.ts`.

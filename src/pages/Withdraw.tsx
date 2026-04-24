@@ -8,6 +8,7 @@ import { BottomNav } from '@/components/BottomNav';
 import { useAuth } from '@/contexts/AuthContext';
 import { withdrawalMethods, oxxoLocations, contacts } from '@/data/mockData';
 import { WithdrawalMethod, PickupLocation, Contact } from '@/types';
+import { calculateWithdrawalFees } from '@/lib/fees';
 import { 
   ArrowLeft, 
   MapPin, 
@@ -75,24 +76,17 @@ export default function Withdraw() {
     : { rate: 1, currency: 'USD' };
 
   const fees = useMemo(() => {
-    if (!selectedMethod || !amount) return { fee: 0, total: parseFloat(amount) || 0, recipient: 0 };
-    
-    const parsedAmount = parseFloat(amount) || 0;
-    let fee = 0;
-    
-    if (selectedMethod.fees.fixed) fee += selectedMethod.fees.fixed;
-    if (selectedMethod.fees.percentage) fee += (parsedAmount * selectedMethod.fees.percentage / 100);
-    
-    const recipientAmount = (parsedAmount - fee) * recipientExchange.rate;
-    
-    return {
-      fee: Math.round(fee * 100) / 100,
-      total: parsedAmount,
-      net: Math.round((parsedAmount - fee) * 100) / 100,
-      recipient: Math.round(recipientAmount * 100) / 100,
+    if (!selectedMethod || !amount) {
+      const a = parseFloat(amount) || 0;
+      return { fee: 0, total: a, net: a, recipient: 0, exchangeRate: recipientExchange.rate, currency: recipientExchange.currency };
+    }
+
+    return calculateWithdrawalFees({
+      amount: parseFloat(amount) || 0,
+      method: selectedMethod,
       exchangeRate: recipientExchange.rate,
-      currency: recipientExchange.currency
-    };
+      currency: recipientExchange.currency,
+    });
   }, [selectedMethod, amount, recipientExchange]);
 
   const handleRecipientSelect = (contact: Contact) => {
