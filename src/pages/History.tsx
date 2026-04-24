@@ -1,4 +1,4 @@
-import { useCallback, useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import { ChevronDown, Search, Filter, Calendar, Banknote, TrendingUp, Clock, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TransactionItem } from '@/components/TransactionItem';
@@ -12,6 +12,17 @@ import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartToo
 import { Bar, BarChart, Cell, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import { useQuery } from '@tanstack/react-query';
 import { fetchSpendingInsights, fetchTransactions } from '@/lib/activity';
+import { 
+  Drawer, 
+  DrawerClose, 
+  DrawerContent, 
+  DrawerDescription, 
+  DrawerFooter, 
+  DrawerHeader, 
+  DrawerTitle, 
+  DrawerTrigger 
+} from '@/components/ui/drawer';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const History: React.FC = () => {
   const navigate = useNavigate();
@@ -23,6 +34,7 @@ const History: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<string>('latest');
   const [showFilters, setShowFilters] = useState(false);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
+  const isMobile = useIsMobile();
 
   const handleGoBack = useCallback(() => {
     navigate(-1); // Go back to previous page
@@ -296,105 +308,89 @@ const History: React.FC = () => {
           </div>
 
           {/* Filters and Sorting */}
-          <Collapsible open={showFilters} onOpenChange={setShowFilters}>
-            <CollapsibleTrigger asChild>
-              <Button variant="outline" size="sm" className="w-full justify-between">
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4" />
-                  <span>Filters & Sort</span>
-                  {(statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all' || amountFilter !== 'all' || sortOrder !== 'latest') && (
-                    <Badge variant="secondary" className="text-xs">
-                      {[statusFilter, typeFilter, dateFilter, amountFilter].filter(f => f !== 'all').length + (sortOrder !== 'latest' ? 1 : 0)}
-                    </Badge>
-                  )}
+          {!isMobile ? (
+            <Collapsible open={showFilters} onOpenChange={setShowFilters}>
+              <CollapsibleTrigger asChild>
+                <Button variant="outline" size="sm" className="w-full justify-between">
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4" />
+                    <span>Filters & Sort (Desktop)</span>
+                    {(statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all' || amountFilter !== 'all' || sortOrder !== 'latest') && (
+                      <Badge variant="secondary" className="text-xs">
+                        {[statusFilter, typeFilter, dateFilter, amountFilter].filter(f => f !== 'all').length + (sortOrder !== 'latest' ? 1 : 0)}
+                      </Badge>
+                    )}
+                  </div>
+                  <ChevronDown className={cn('w-4 h-4 transition-transform', showFilters && 'rotate-180')} />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-4 mt-3">
+                <FiltersContent 
+                  statusFilter={statusFilter} setStatusFilter={setStatusFilter}
+                  typeFilter={typeFilter} setTypeFilter={setTypeFilter}
+                  dateFilter={dateFilter} setDateFilter={setDateFilter}
+                  amountFilter={amountFilter} setAmountFilter={setAmountFilter}
+                  sortOrder={sortOrder} setSortOrder={setSortOrder}
+                  statusOptions={statusOptions}
+                  typeOptions={typeOptions}
+                  dateOptions={dateOptions}
+                  amountOptions={amountOptions}
+                />
+              </CollapsibleContent>
+            </Collapsible>
+          ) : (
+            <Drawer open={showFilters} onOpenChange={setShowFilters}>
+              <DrawerTrigger asChild>
+                <Button variant="outline" size="sm" className="w-full justify-between h-11 bg-primary/5 border-primary/20">
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-primary" />
+                    <span className="font-semibold">Filters & Sort</span>
+                    {(statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all' || amountFilter !== 'all' || sortOrder !== 'latest') && (
+                      <Badge variant="default" className="text-[10px] h-5 min-w-5 justify-center">
+                        {[statusFilter, typeFilter, dateFilter, amountFilter].filter(f => f !== 'all').length + (sortOrder !== 'latest' ? 1 : 0)}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground uppercase font-bold tracking-tighter">View Options</span>
+                    <ChevronDown className="w-4 h-4" />
+                  </div>
+                </Button>
+              </DrawerTrigger>
+              <DrawerContent>
+                <DrawerHeader className="text-left border-b border-border/50 pb-4">
+                  <DrawerTitle className="text-lg flex items-center gap-2">
+                    <Filter className="w-5 h-5 text-primary" />
+                    Filter Activity
+                  </DrawerTitle>
+                  <DrawerDescription>
+                    Narrow down your transactions by status, date, or amount.
+                  </DrawerDescription>
+                </DrawerHeader>
+                <div className="px-5 py-6 max-h-[60vh] overflow-y-auto">
+                  <FiltersContent 
+                    statusFilter={statusFilter} setStatusFilter={setStatusFilter}
+                    typeFilter={typeFilter} setTypeFilter={setTypeFilter}
+                    dateFilter={dateFilter} setDateFilter={setDateFilter}
+                    amountFilter={amountFilter} setAmountFilter={setAmountFilter}
+                    sortOrder={sortOrder} setSortOrder={setSortOrder}
+                    statusOptions={statusOptions}
+                    typeOptions={typeOptions}
+                    dateOptions={dateOptions}
+                    amountOptions={amountOptions}
+                  />
                 </div>
-                <ChevronDown className={cn('w-4 h-4 transition-transform', showFilters && 'rotate-180')} />
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-4 mt-3">
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Status & Type</p>
-                <div className="flex gap-2 flex-wrap">
-                  {statusOptions.map((option) => (
-                    <Button
-                      key={option.value}
-                      variant={statusFilter === option.value ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setStatusFilter(option.value)}
-                      className="text-xs"
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  {typeOptions.map((option) => (
-                    <Button
-                      key={option.value}
-                      variant={typeFilter === option.value ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setTypeFilter(option.value)}
-                      className="text-xs"
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Date & Amount</p>
-                <div className="flex gap-2 flex-wrap">
-                  {dateOptions.map((option) => (
-                    <Button
-                      key={option.value}
-                      variant={dateFilter === option.value ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setDateFilter(option.value)}
-                      className="text-xs"
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  {amountOptions.map((option) => (
-                    <Button
-                      key={option.value}
-                      variant={amountFilter === option.value ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setAmountFilter(option.value)}
-                      className="text-xs"
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Sort Order</p>
-                <div className="flex gap-2 flex-wrap">
-                  {[
-                    { value: 'latest', label: 'Latest First' },
-                    { value: 'oldest', label: 'Oldest First' },
-                    { value: 'highest', label: 'Highest Amount' },
-                    { value: 'lowest', label: 'Lowest Amount' }
-                  ].map((option) => (
-                     <Button
-                      key={option.value}
-                      variant={sortOrder === option.value ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setSortOrder(option.value)}
-                      className="text-xs"
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+                <DrawerFooter className="pt-4 border-t border-border/50">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button variant="outline" onClick={clearFilters}>Reset All</Button>
+                    <DrawerClose asChild>
+                      <Button>Apply Filters</Button>
+                    </DrawerClose>
+                  </div>
+                </DrawerFooter>
+              </DrawerContent>
+            </Drawer>
+          )}
         </div>
       </div>
 
@@ -468,10 +464,127 @@ const History: React.FC = () => {
               </div>
             ))}
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );
 };
+
+interface FiltersContentProps {
+  statusFilter: string;
+  setStatusFilter: (value: string) => void;
+  typeFilter: string;
+  setTypeFilter: (value: string) => void;
+  dateFilter: string;
+  setDateFilter: (value: string) => void;
+  amountFilter: string;
+  setAmountFilter: (value: string) => void;
+  sortOrder: string;
+  setSortOrder: (value: string) => void;
+  statusOptions: Array<{ value: string; label: string }>;
+  typeOptions: Array<{ value: string; label: string }>;
+  dateOptions: Array<{ value: string; label: string }>;
+  amountOptions: Array<{ value: string; label: string }>;
+}
+
+const FiltersContent: React.FC<FiltersContentProps> = ({
+  statusFilter, setStatusFilter,
+  typeFilter, setTypeFilter,
+  dateFilter, setDateFilter,
+  amountFilter, setAmountFilter,
+  sortOrder, setSortOrder,
+  statusOptions, typeOptions, dateOptions, amountOptions
+}) => (
+  <div className="space-y-6">
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Status & Type</p>
+      <div className="flex gap-2 flex-wrap">
+        {statusOptions.map((option) => (
+          <Button
+            key={option.value}
+            variant={statusFilter === option.value ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter(option.value)}
+            className="text-xs rounded-full h-8 px-4"
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+      <div className="flex gap-2 flex-wrap mt-2">
+        {typeOptions.map((option) => (
+          <Button
+            key={option.value}
+            variant={typeFilter === option.value ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTypeFilter(option.value)}
+            className="text-xs rounded-full h-8 px-4"
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+    
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Date Range</p>
+      <div className="flex gap-2 flex-wrap">
+        {dateOptions.map((option) => (
+          <Button
+            key={option.value}
+            variant={dateFilter === option.value ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setDateFilter(option.value)}
+            className="text-xs rounded-lg h-9 px-3"
+          >
+            <Calendar className="w-3.5 h-3.5 mr-1.5 opacity-70" />
+            {option.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Amount</p>
+      <div className="flex gap-2 flex-wrap">
+        {amountOptions.map((option) => (
+          <Button
+            key={option.value}
+            variant={amountFilter === option.value ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setAmountFilter(option.value)}
+            className="text-xs rounded-lg h-9 px-3"
+          >
+            <Banknote className="w-3.5 h-3.5 mr-1.5 opacity-70" />
+            {option.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+
+    <div className="space-y-3 border-t border-border/50 pt-4">
+      <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Sort Result By</p>
+      <div className="flex gap-2 flex-wrap">
+        {[
+          { value: 'latest', label: 'Latest First' },
+          { value: 'oldest', label: 'Oldest First' },
+          { value: 'highest', label: 'Highest Amount' },
+          { value: 'lowest', label: 'Lowest Amount' }
+        ].map((option) => (
+            <Button
+            key={option.value}
+            variant={sortOrder === option.value ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setSortOrder(option.value)}
+            className="text-xs px-4"
+          >
+            <TrendingUp className="w-3.5 h-3.5 mr-1.5 opacity-70" />
+            {option.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 export default History;
