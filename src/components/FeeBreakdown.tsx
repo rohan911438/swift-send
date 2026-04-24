@@ -1,5 +1,6 @@
 import { Info, Zap, Shield, ArrowRight, HelpCircle, Star, Globe2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { calculateFees, calculateSavings } from '@/lib/feeCalculation';
 
 interface FeeBreakdownProps {
   amount: number;
@@ -12,14 +13,13 @@ interface FeeBreakdownProps {
 
 export function FeeBreakdown({
   amount,
-  networkFee,
-  serviceFee,
-  totalFee,
-  recipientGets,
   className,
-}: FeeBreakdownProps) {
-  const savingsVsTraditional = amount * 0.08; // 8% typical bank transfer fee
-  const timeVsTraditional = "3-5 business days";
+}: {
+  amount: number;
+  className?: string;
+}) {
+  const fees = calculateFees(amount);
+  const savings = calculateSavings(amount);
   
   return (
     <div
@@ -53,7 +53,7 @@ export function FeeBreakdown({
               <Star className="w-4 h-4 text-blue-500" />
               <span>Stellar network fee</span>
             </div>
-            <span className="font-medium text-foreground">${networkFee.toFixed(4)}</span>
+            <span className="font-medium text-foreground">${fees.networkFee.toFixed(4)}</span>
           </div>
 
           <div className="flex justify-between items-center text-sm">
@@ -61,14 +61,14 @@ export function FeeBreakdown({
               <Shield className="w-4 h-4 text-green-500" />
               <span>Service fee (0.5%)</span>
             </div>
-            <span className="font-medium text-foreground">${serviceFee.toFixed(2)}</span>
+            <span className="font-medium text-foreground">${fees.serviceFee.toFixed(2)}</span>
           </div>
         </div>
 
         <div className="border-t border-border/50 pt-3">
           <div className="flex justify-between items-center text-sm">
             <span className="text-muted-foreground">Total fees</span>
-            <span className="font-semibold text-foreground">${totalFee.toFixed(2)}</span>
+            <span className="font-semibold text-foreground">${fees.totalFee.toFixed(2)}</span>
           </div>
         </div>
       </div>
@@ -81,7 +81,7 @@ export function FeeBreakdown({
             <span className="font-semibold text-foreground">Recipient receives</span>
           </div>
           <span className="text-2xl font-bold text-green-600">
-            ${recipientGets.toFixed(2)} USDC
+            ${fees.recipientGets.toFixed(2)} USDC
           </span>
         </div>
         <p className="text-xs text-green-600 dark:text-green-400 mt-1 ml-7">
@@ -107,7 +107,7 @@ export function FeeBreakdown({
           <div>
             <p className="text-blue-600 dark:text-blue-400 font-medium">Stellar Network</p>
             <p className="text-blue-700 dark:text-blue-300">
-              ${totalFee.toFixed(2)} fee • 3-5 seconds
+              ${fees.totalFee.toFixed(2)} fee • 3-5 seconds
             </p>
           </div>
         </div>

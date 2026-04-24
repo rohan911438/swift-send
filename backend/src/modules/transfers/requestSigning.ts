@@ -3,7 +3,7 @@ import { ValidationError } from '../../errors';
 
 type JsonLike = null | boolean | number | string | JsonLike[] | { [key: string]: JsonLike };
 
-function sortValue(value: JsonLike): JsonLike {
+export function sortValue(value: JsonLike): JsonLike {
   if (Array.isArray(value)) {
     return value.map((item) => sortValue(item));
   }
@@ -24,7 +24,8 @@ function sortValue(value: JsonLike): JsonLike {
 }
 
 export function canonicalizeSignedTransferPayload(payload: Record<string, unknown>): string {
-  return JSON.stringify(sortValue(payload as JsonLike));
+  const { signature, ...rest } = payload;
+  return JSON.stringify(sortValue(rest as JsonLike));
 }
 
 function signCanonicalPayload(payload: string, secret: string): Buffer {
