@@ -83,7 +83,7 @@ export class TransferLifecycle {
     return this.repository.findById(id);
   }
 
-  private validateCommand(command: CreateTransferCommand) {
+  public validateCommand(command: CreateTransferCommand) {
     if (!command.idempotencyKey) {
       throw new ValidationError('idempotency_key is required');
     }
@@ -93,11 +93,26 @@ export class TransferLifecycle {
     if (!command.amount || command.amount <= 0) {
       throw new ValidationError('amount must be greater than zero');
     }
+    if (command.amount > 1000000) {
+      throw new ValidationError('Amount exceeds maximum limit');
+    }
     if (!command.currency) {
       throw new ValidationError('currency is required');
     }
+    if (command.currency !== 'USDC') {
+      throw new ValidationError(`Unsupported currency: ${command.currency}`);
+    }
     if (!command.recipient) {
       throw new ValidationError('recipient is required');
+    }
+    if (!['wallet', 'cash_pickup', 'bank'].includes(command.recipient.type)) {
+      throw new ValidationError(`Invalid recipient type: ${command.recipient.type}`);
+    }
+    if (command.recipient.type === 'wallet' && !command.recipient.walletPublicKey) {
+      throw new ValidationError('Wallet recipient must have walletPublicKey');
+    }
+    if (command.recipient.type === 'cash_pickup' && (!command.recipient.partnerCode || !command.recipient.country)) {
+      throw new ValidationError('Cash pickup recipient must have partnerCode and country');
     }
   }
 

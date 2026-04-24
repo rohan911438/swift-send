@@ -34,6 +34,8 @@ export default async function transferRoutes(fastify: FastifyInstance) {
       verifySignedTransferPayload(payload, body.signature, session.transactionSigningSecret);
 
       const command = mapRequestToCommand(body);
+      fastify.container.services.transfers.validateCommand(command);
+
       const jobId = fastify.container.services.transferQueue.enqueue(command);
       return reply.status(202).send({
         queue_job_id: jobId,
