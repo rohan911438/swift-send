@@ -5,6 +5,7 @@ import type { JwtSessionPayload, Session } from '../auth/sessionTypes';
 import { CreateTransferCommand, TransferRecord } from '../modules/transfers/domain';
 import { canonicalizeSignedTransferPayload, verifySignedTransferPayload } from '../modules/transfers/requestSigning';
 import { requireVerifiedSession } from '../middleware/authenticate';
+import { requireAccessGuard } from '../middleware/requireRole';
 
 interface TransferRequest {
   idempotency_key: string;
@@ -25,7 +26,7 @@ interface TransferRequest {
 }
 
 export default async function transferRoutes(fastify: FastifyInstance) {
-  fastify.post('/transfers', { preHandler: [requireVerifiedSession] }, async (req, reply) => {
+  fastify.post('/transfers', { preHandler: [requireVerifiedSession, requireAccessGuard] }, async (req, reply) => {
     const body = req.body as TransferRequest;
     try {
       const payload = requestPayloadForSigning(body);

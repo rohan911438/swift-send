@@ -1,6 +1,7 @@
 // Test setup for backend
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-jwt-secret';
+process.env.WORKER_DELAY_MS = '0';  // fire settlement immediately in tests
 process.env.STELLAR_NETWORK = 'TESTNET';
 process.env.STELLAR_HORIZON_URL = 'https://horizon-testnet.stellar.org';
 process.env.STELLAR_DISTRIBUTION_SECRET = 'STEST123456789ABCDEF';

@@ -14,6 +14,8 @@ export interface PublicUser {
   createdAt: string;
 }
 
+export type UserRole = 'admin' | 'user';
+
 export interface Session {
   id: string;
   email?: string;
@@ -22,6 +24,7 @@ export interface Session {
   hasWallet: boolean;
   onboardingCompleted: boolean;
   transactionSigningSecret: string;
+  role?: UserRole;
   user?: PublicUser;
 }
 
@@ -29,4 +32,5 @@ export interface JwtSessionPayload {
   sub: string;
   verified: boolean;
   hasWallet: boolean;
+  role?: UserRole;
 }

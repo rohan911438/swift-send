@@ -96,6 +96,46 @@ export async function fetchTransactions(limit = 50): Promise<Transaction[]> {
   return body.items.map(parseTransactionDto);
 }
 
+export interface TransactionSearchParams {
+  q?: string;
+  status?: 'pending' | 'completed' | 'failed';
+  dateFrom?: Date;
+  dateTo?: Date;
+  amountMin?: number;
+  amountMax?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface TransactionSearchResult {
+  items: Transaction[];
+  total: number;
+}
+
+export async function searchTransactions(
+  params: TransactionSearchParams,
+): Promise<TransactionSearchResult> {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set('q', params.q);
+  if (params.status) qs.set('status', params.status);
+  if (params.dateFrom) qs.set('dateFrom', params.dateFrom.toISOString());
+  if (params.dateTo) qs.set('dateTo', params.dateTo.toISOString());
+  if (params.amountMin !== undefined) qs.set('amountMin', String(params.amountMin));
+  if (params.amountMax !== undefined) qs.set('amountMax', String(params.amountMax));
+  if (params.limit !== undefined) qs.set('limit', String(params.limit));
+  if (params.offset !== undefined) qs.set('offset', String(params.offset));
+
+  const response = await apiFetch(`/activity/transactions/search?${qs}`);
+  const body = await requireJson<{ items: TransactionsResponseDto['items']; total: number }>(
+    response,
+    'Could not search transactions',
+  );
+  return {
+    items: body.items.map(parseTransactionDto),
+    total: body.total,
+  };
+}
+
 export async function fetchSpendingInsights(): Promise<SpendingInsights> {
   const response = await apiFetch('/activity/spending-insights');
   const body = await requireJson<SpendingInsightsDto>(response, 'Could not load spending insights');
