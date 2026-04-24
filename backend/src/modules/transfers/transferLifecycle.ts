@@ -3,6 +3,7 @@ import { config } from '../../config';
 import { logger } from '../../logger';
 import { EventBus } from '../../core/eventBus';
 import { ComplianceService } from '../compliance/complianceService';
+import { FraudService } from '../fraud/fraudService';
 import { WalletService } from '../wallets/walletService';
 import { TransferRepository } from './repository';
 import { CreateTransferCommand, TransferRecord, TransferState } from './domain';
@@ -12,7 +13,8 @@ export class TransferLifecycle {
     private readonly repository: TransferRepository,
     private readonly wallets: WalletService,
     private readonly compliance: ComplianceService,
-    private readonly eventBus: EventBus
+    private readonly fraud: FraudService,
+    private readonly eventBus: EventBus,
   ) {}
 
   async createTransfer(command: CreateTransferCommand) {
@@ -30,9 +32,25 @@ export class TransferLifecycle {
       destinationCountry: command.recipient.country,
       tierId: command.complianceTier,
     });
+    const historicalTransfers = await this.repository.listRecentByUserId(command.userId, 25);
+    const fraudAssessment = this.fraud.assessTransfer({
+      userId: command.userId,
+      transferId: command.idempotencyKey,
+      amount: command.amount,
+      destinationCountry: command.recipient.country,
+      recipientType: command.recipient.type,
+      historicalTransfers,
+    });
+    const enrichedCompliance = {
+      ...complianceDecision,
+      warnings: [
+        ...complianceDecision.warnings,
+        ...fraudAssessment.flags.map((flag) => `Fraud flag: ${flag.label}`),
+      ],
+    };
 
-    if (!complianceDecision.canProceed) {
-      throw new ValidationError('Compliance requirements not satisfied', complianceDecision);
+    if (!enrichedCompliance.canProceed) {
+      throw new ValidationError('Compliance requirements not satisfied', enrichedCompliance);
     }
 
     const now = new Date().toISOString();
@@ -46,14 +64,15 @@ export class TransferLifecycle {
       currency: command.currency,
       state: 'created',
       statusHistory: [{ state: 'created', at: now }],
-      compliance: complianceDecision,
+      compliance: enrichedCompliance,
+      fraud: fraudAssessment,
       processingAttempts: 0,
       metadata: command.metadata,
       createdAt: now,
       updatedAt: now,
     };
 
-    this.appendStatus(transfer, 'validated', complianceDecision.warnings.join(', ') || undefined);
+    this.appendStatus(transfer, 'validated', enrichedCompliance.warnings.join(', ') || undefined);
 
     const escrow = await this.wallets.reserveFunds({
       userId: command.userId,
@@ -72,8 +91,33 @@ export class TransferLifecycle {
     await this.eventBus.publish({
       type: 'transfer.created',
       timestamp: new Date().toISOString(),
-      payload: { transferId: transfer.id, amount: transfer.amount, currency: transfer.currency },
+      payload: {
+        userId: transfer.userId,
+        transferId: transfer.id,
+        amount: transfer.amount,
+        currency: transfer.currency,
+        recipientName: this.recipientName(transfer),
+      },
     });
+
+    if (fraudAssessment.flags.length > 0 || fraudAssessment.requiresReview) {
+      this.fraud.logAbnormalActivity({
+        userId: transfer.userId,
+        transferId: transfer.id,
+        assessment: fraudAssessment,
+        recipientName: this.recipientName(transfer),
+      });
+      await this.eventBus.publish({
+        type: 'transfer.flagged',
+        timestamp: new Date().toISOString(),
+        payload: {
+          userId: transfer.userId,
+          transferId: transfer.id,
+          score: fraudAssessment.score,
+          flags: fraudAssessment.flags.map((flag) => flag.label),
+        },
+      });
+    }
 
     this.scheduleSettlement(transfer.id);
     return transfer;
@@ -111,7 +155,10 @@ export class TransferLifecycle {
     if (command.recipient.type === 'wallet' && !command.recipient.walletPublicKey) {
       throw new ValidationError('Wallet recipient must have walletPublicKey');
     }
-    if (command.recipient.type === 'cash_pickup' && (!command.recipient.partnerCode || !command.recipient.country)) {
+    if (
+      command.recipient.type === 'cash_pickup' &&
+      (!command.recipient.partnerCode || !command.recipient.country)
+    ) {
       throw new ValidationError('Cash pickup recipient must have partnerCode and country');
     }
   }
@@ -125,6 +172,11 @@ export class TransferLifecycle {
   private scheduleSettlement(transferId: string) {
     logger.debug({ transferId, delay: config.queues.settlementDelayMs }, 'queuing settlement attempt');
     setTimeout(() => this.settleTransfer(transferId), config.queues.settlementDelayMs);
+  }
+
+  private recipientName(transfer: TransferRecord) {
+    const maybeName = transfer.recipient.metadata?.name;
+    return typeof maybeName === 'string' && maybeName.length > 0 ? maybeName : 'Recipient';
   }
 
   private async settleTransfer(transferId: string) {
@@ -153,7 +205,12 @@ export class TransferLifecycle {
       await this.eventBus.publish({
         type: 'transfer.settled',
         timestamp: new Date().toISOString(),
-        payload: { transferId: transfer.id },
+        payload: {
+          userId: transfer.userId,
+          transferId: transfer.id,
+          amount: transfer.amount,
+          recipientName: this.recipientName(transfer),
+        },
       });
     } catch (err: unknown) {
       transfer.processingAttempts += 1;
@@ -173,7 +230,13 @@ export class TransferLifecycle {
         await this.eventBus.publish({
           type: 'transfer.failed',
           timestamp: new Date().toISOString(),
-          payload: { transferId: transfer.id, error: transfer.lastError },
+          payload: {
+            userId: transfer.userId,
+            transferId: transfer.id,
+            amount: transfer.amount,
+            recipientName: this.recipientName(transfer),
+            error: transfer.lastError,
+          },
         });
       } else {
         this.scheduleSettlement(transfer.id);

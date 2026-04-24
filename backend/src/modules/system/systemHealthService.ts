@@ -4,6 +4,14 @@ import { WalletService } from '../wallets/walletService';
 
 export class SystemHealthService {
   constructor(private readonly compliance: ComplianceService, private readonly wallets: WalletService) {}
+  private readinessCache?: {
+    expiresAt: number;
+    stellar: {
+      status: 'online' | 'offline';
+      latencyMs: number | null;
+      checkedAt: string;
+    };
+  };
 
   async liveness() {
     return { status: 'alive', timestamp: new Date().toISOString() };
@@ -30,6 +38,10 @@ export class SystemHealthService {
   }
 
   private async checkStellarHealth() {
+    if (this.readinessCache && this.readinessCache.expiresAt > Date.now()) {
+      return this.readinessCache.stellar;
+    }
+
     const controller = new AbortController();
     const startedAt = Date.now();
     const timeout = setTimeout(() => controller.abort(), 3000);
@@ -41,17 +53,27 @@ export class SystemHealthService {
       });
       const latencyMs = Date.now() - startedAt;
 
-      return {
+      const stellar = {
         status: response.ok ? 'online' as const : 'offline' as const,
         latencyMs,
         checkedAt: new Date().toISOString(),
       };
+      this.readinessCache = {
+        expiresAt: Date.now() + config.performance.healthCacheTtlMs,
+        stellar,
+      };
+      return stellar;
     } catch {
-      return {
+      const stellar = {
         status: 'offline' as const,
         latencyMs: null,
         checkedAt: new Date().toISOString(),
       };
+      this.readinessCache = {
+        expiresAt: Date.now() + config.performance.healthCacheTtlMs,
+        stellar,
+      };
+      return stellar;
     } finally {
       clearTimeout(timeout);
     }

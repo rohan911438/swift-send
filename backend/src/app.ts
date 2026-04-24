@@ -6,6 +6,7 @@ import healthRoutes from './routes/health';
 import transferRoutes from './routes/transfers';
 import escrowRoutes from './routes/escrow';
 import authRoutes from './routes/auth';
+import activityRoutes from './routes/activity';
 import { config } from './config';
 import { logger } from './logger';
 import { createContainer } from './container';
@@ -43,6 +44,7 @@ export async function buildApp() {
   const prefix = container.config.server.basePath;
   await app.register(authRoutes, { prefix });
   await app.register(healthRoutes, { prefix });
+  await app.register(activityRoutes, { prefix });
   await app.register(transferRoutes, { prefix });
   await app.register(escrowRoutes, { prefix });
 

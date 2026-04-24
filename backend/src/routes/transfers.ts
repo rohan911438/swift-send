@@ -153,6 +153,15 @@ function formatTransferResponse(record: TransferRecord) {
       risk_score: record.compliance.riskScore,
       warnings: record.compliance.warnings,
     },
+    fraud: record.fraud
+      ? {
+          score: record.fraud.score,
+          level: record.fraud.level,
+          requires_review: record.fraud.requiresReview,
+          flags: record.fraud.flags,
+          logged_at: record.fraud.loggedAt,
+        }
+      : undefined,
     history: record.statusHistory,
     last_error: record.lastError,
     available_balance: getSessionUserBalance(record.userId),

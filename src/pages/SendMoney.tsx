@@ -18,6 +18,7 @@ import { parseTransferError, TransferError } from "@/lib/errorHandling";
 import { transferLogger } from "@/lib/transferLogger";
 import { contacts, calculateFees } from "@/data/mockData";
 import { Contact, TransactionPreview } from "@/types";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowRight,
@@ -51,9 +52,24 @@ interface NewRecipient {
 const MAX_TRANSFER_AMOUNT = 5000;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\+?[1-9]\d{8,14}$/;
+const CASH_PICKUP_PARTNER_BY_COUNTRY: Record<string, string> = {
+  MX: "OXXO",
+  PH: "GCASH",
+  GT: "GUATEMALA_EXPRESS",
+  SV: "BANCO_AGRICOLA",
+  US: "MONEYGRAM",
+};
+const DESTINATION_CURRENCY_BY_COUNTRY: Record<string, string> = {
+  MX: "MXN",
+  PH: "PHP",
+  GT: "GTQ",
+  SV: "USD",
+  US: "USD",
+};
 
 export default function SendMoney() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user, transactionSigningSecret, updateBalance } = useAuth();
   const { connectionState } = useWallet();
   const { checkTransactionCompliance } = useCompliance();
@@ -87,6 +103,11 @@ export default function SendMoney() {
       try {
         const status = await checkTransferQueueStatus(queueJobId);
         if (status.status === "completed") {
+          if (user?.usdcBalance !== undefined) {
+            updateBalance(Number((user.usdcBalance - amountValue).toFixed(2)));
+          }
+          void queryClient.invalidateQueries({ queryKey: ["activity"] });
+          void queryClient.invalidateQueries({ queryKey: ["notifications"] });
           setStep("success");
           setQueueJobId(null);
           if (pollIntervalRef.current) {
@@ -95,6 +116,8 @@ export default function SendMoney() {
           }
           toast.success("Transfer completed successfully!");
         } else if (status.status === "failed") {
+          void queryClient.invalidateQueries({ queryKey: ["activity"] });
+          void queryClient.invalidateQueries({ queryKey: ["notifications"] });
           setSubmissionError(status.error || "Transfer failed in the queue");
           setQueueJobId(null);
           if (pollIntervalRef.current) {
@@ -116,7 +139,7 @@ export default function SendMoney() {
         pollIntervalRef.current = null;
       }
     };
-  }, [queueJobId]);
+  }, [amountValue, queryClient, queueJobId, updateBalance, user?.usdcBalance]);
 
   const filteredContacts = useMemo(
     () =>
@@ -306,6 +329,11 @@ export default function SendMoney() {
         selectedContact?.name || newRecipient?.name || "Recipient";
       const recipientIdentifier =
         selectedContact?.phone || newRecipient?.identifier || "";
+      const recipientCountry = selectedContact?.countryCode || "US";
+      const partnerCode =
+        CASH_PICKUP_PARTNER_BY_COUNTRY[recipientCountry] || "MONEYGRAM";
+      const destinationCurrency =
+        DESTINATION_CURRENCY_BY_COUNTRY[recipientCountry] || "USD";
 
       const transfer = await createTransfer(
         {
@@ -316,11 +344,13 @@ export default function SendMoney() {
           currency: "USDC",
           recipient: {
             type: "cash_pickup",
-            country: selectedContact?.country || "US",
+            country: recipientCountry,
+            partner_code: partnerCode,
             metadata: {
               identifier: recipientIdentifier,
               name: recipientName,
               source: newRecipient ? newRecipient.type : "recent_contact",
+              destination_currency: destinationCurrency,
             },
           },
           compliance_tier: user.complianceTier,

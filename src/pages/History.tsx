@@ -1,7 +1,6 @@
 import { useCallback, useState, useMemo } from 'react';
 import { ChevronDown, Search, Filter, Calendar, Banknote, TrendingUp, Clock, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/contexts/AuthContext';
 import { TransactionItem } from '@/components/TransactionItem';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -11,9 +10,10 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { useNavigate } from 'react-router-dom';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Bar, BarChart, Cell, Pie, PieChart, XAxis, YAxis } from 'recharts';
+import { useQuery } from '@tanstack/react-query';
+import { fetchSpendingInsights, fetchTransactions } from '@/lib/activity';
 
 const History: React.FC = () => {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -28,13 +28,24 @@ const History: React.FC = () => {
     navigate(-1); // Go back to previous page
   }, [navigate]);
 
+  const transactionsQuery = useQuery({
+    queryKey: ['activity', 'transactions', 100],
+    queryFn: () => fetchTransactions(100),
+  });
+  const insightsQuery = useQuery({
+    queryKey: ['activity', 'insights'],
+    queryFn: fetchSpendingInsights,
+  });
+  const transactions = transactionsQuery.data || [];
+  const insights = insightsQuery.data;
+
   // Calculate summary statistics
   const summary = useMemo(() => {
-    const sentTransactions = user?.transactions?.filter(t => t.type === 'send') || [];
+    const sentTransactions = transactions.filter(t => t.type === 'send');
     const totalSent = sentTransactions.reduce((sum, t) => sum + t.amount, 0);
     const totalFees = sentTransactions.reduce((sum, t) => sum + t.fee, 0);
-    const pendingTransactions = user?.transactions?.filter(t => t.status === 'pending').length || 0;
-    const thisMonth = user?.transactions?.filter(t => {
+    const pendingTransactions = transactions.filter(t => t.status === 'pending').length || 0;
+    const thisMonth = transactions.filter(t => {
       const transactionDate = new Date(t.timestamp);
       const now = new Date();
       return transactionDate.getMonth() === now.getMonth() && 
@@ -42,11 +53,11 @@ const History: React.FC = () => {
     }).length || 0;
 
     return { totalSent, totalFees, pendingTransactions, thisMonth };
-  }, [user?.transactions]);
+  }, [transactions]);
 
   // Filter transactions based on search and filters
   const filteredTransactions = useMemo(() => {
-    let filtered = (user?.transactions || []).filter(transaction => {
+    let filtered = transactions.filter(transaction => {
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = transaction.recipientName.toLowerCase().includes(searchLower) ||
                            transaction.recipientPhone?.includes(searchTerm) ||
@@ -88,36 +99,7 @@ const History: React.FC = () => {
     });
 
     return filtered;
-  }, [user?.transactions, searchTerm, statusFilter, typeFilter, dateFilter, amountFilter, sortOrder]);
-
-  const monthlyTransferData = useMemo(() => {
-    const monthlyMap = new Map<string, { month: string; sent: number; received: number }>();
-    (user?.transactions || []).forEach((transaction) => {
-      const date = new Date(transaction.timestamp);
-      const month = date.toLocaleString('en-US', { month: 'short' });
-      if (!monthlyMap.has(month)) {
-        monthlyMap.set(month, { month, sent: 0, received: 0 });
-      }
-      const monthData = monthlyMap.get(month);
-      if (!monthData) return;
-      if (transaction.type === 'send') monthData.sent += transaction.amount;
-      if (transaction.type === 'receive') monthData.received += transaction.amount;
-    });
-
-    return Array.from(monthlyMap.values()).slice(-6);
-  }, [user?.transactions]);
-
-  const categoryData = useMemo(() => {
-    const categoryMap = new Map<string, number>();
-    (user?.transactions || [])
-      .filter((transaction) => transaction.type === 'send')
-      .forEach((transaction) => {
-        const category = transaction.destinationCurrency ? `${transaction.destinationCurrency} transfer` : 'General transfers';
-        categoryMap.set(category, (categoryMap.get(category) ?? 0) + transaction.amount);
-      });
-
-    return Array.from(categoryMap.entries()).map(([category, value]) => ({ category, value }));
-  }, [user?.transactions]);
+  }, [transactions, searchTerm, statusFilter, typeFilter, dateFilter, amountFilter, sortOrder]);
 
   const handleTransactionClick = useCallback((transactionId: string) => {
     setExpandedTransactionId((currentId) => (currentId === transactionId ? null : transactionId));
@@ -230,16 +212,16 @@ const History: React.FC = () => {
                   className="h-56 w-full"
                   config={{
                     sent: { label: 'Sent', color: '#f97316' },
-                    received: { label: 'Received', color: '#16a34a' },
+                    successful: { label: 'Completed', color: '#16a34a' },
                   }}
                 >
-                  <BarChart data={monthlyTransferData}>
+                  <BarChart data={insights?.monthlyTransferData || []}>
                     <XAxis dataKey="month" tickLine={false} axisLine={false} />
                     <YAxis tickLine={false} axisLine={false} width={32} />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <ChartLegend content={<ChartLegendContent />} />
                     <Bar dataKey="sent" fill="var(--color-sent)" radius={[6, 6, 0, 0]} />
-                    <Bar dataKey="received" fill="var(--color-received)" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="successful" fill="var(--color-successful)" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ChartContainer>
               </CardContent>
@@ -269,8 +251,8 @@ const History: React.FC = () => {
                         />
                       }
                     />
-                    <Pie data={categoryData} dataKey="value" nameKey="category" outerRadius={80}>
-                      {categoryData.map((entry, index) => (
+                    <Pie data={insights?.categoryData || []} dataKey="value" nameKey="category" outerRadius={80}>
+                      {(insights?.categoryData || []).map((entry, index) => (
                         <Cell key={`${entry.category}-${index}`} fill={['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7'][index % 6]} />
                       ))}
                     </Pie>
@@ -279,6 +261,28 @@ const History: React.FC = () => {
               </CardContent>
             </Card>
           </div>
+
+          {insights?.topExpenses?.length ? (
+            <Card className="border-border/60 mb-4">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Top Expenses</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {insights.topExpenses.map((expense, index) => (
+                  <div key={expense.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/50 px-3 py-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground truncate">{index + 1}. {expense.recipientName}</p>
+                      <p className="text-xs text-muted-foreground truncate">{expense.category}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-foreground">${expense.amount.toFixed(2)}</p>
+                      <p className="text-xs text-muted-foreground">{expense.timestamp.toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
 
           {/* Search Bar */}
           <div className="relative mb-3">
@@ -395,7 +399,20 @@ const History: React.FC = () => {
       </div>
 
       <div className="p-6 pt-2">
-        {filteredTransactions.length === 0 ? (
+        {(transactionsQuery.isLoading || insightsQuery.isLoading) && (
+          <div className="space-y-3 mb-6">
+            <div className="h-24 rounded-xl bg-muted animate-pulse" />
+            <div className="h-24 rounded-xl bg-muted animate-pulse" />
+          </div>
+        )}
+
+        {(transactionsQuery.isError || insightsQuery.isError) && !transactionsQuery.isLoading && (
+          <div className="mb-6 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            We couldn&apos;t load your latest activity. Please try again in a moment.
+          </div>
+        )}
+
+        {!transactionsQuery.isLoading && filteredTransactions.length === 0 ? (
           <div className="text-center py-12">
             {searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all' || amountFilter !== 'all' || sortOrder !== 'latest' ? (
               <div className="space-y-3">
@@ -451,7 +468,7 @@ const History: React.FC = () => {
               </div>
             ))}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

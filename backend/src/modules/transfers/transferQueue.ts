@@ -14,6 +14,8 @@ export interface QueuedTransferJob {
 }
 
 export class TransferQueue {
+  private static readonly MAX_STORED_RESULTS = 200;
+  private static readonly FINISHED_JOB_TTL_MS = 15 * 60 * 1000;
   private queue: QueuedTransferJob[] = [];
   private processing = false;
   private results = new Map<string, QueuedTransferJob>();
@@ -40,6 +42,7 @@ export class TransferQueue {
     logger.debug({ jobId, queueLength: this.queue.length }, 'transfer queued');
 
     this.results.set(jobId, job);
+    this.cleanupResults();
 
     void this.processQueue();
     return jobId;
@@ -102,9 +105,34 @@ export class TransferQueue {
         }
 
         this.queue.shift();
+        this.cleanupResults();
       }
     } finally {
       this.processing = false;
+    }
+  }
+
+  private cleanupResults() {
+    const now = Date.now();
+
+    for (const [jobId, job] of this.results.entries()) {
+      const finishedAt = job.completedAt ? new Date(job.completedAt).getTime() : 0;
+      if (
+        job.status !== 'pending' &&
+        job.status !== 'processing' &&
+        finishedAt > 0 &&
+        now - finishedAt > TransferQueue.FINISHED_JOB_TTL_MS
+      ) {
+        this.results.delete(jobId);
+      }
+    }
+
+    while (this.results.size > TransferQueue.MAX_STORED_RESULTS) {
+      const oldestKey = this.results.keys().next().value as string | undefined;
+      if (!oldestKey) {
+        break;
+      }
+      this.results.delete(oldestKey);
     }
   }
 }

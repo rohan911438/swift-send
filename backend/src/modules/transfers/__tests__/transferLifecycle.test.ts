@@ -12,10 +12,32 @@ const mockWalletService = {
 const mockComplianceService = {
   evaluateTransfer: jest.fn().mockResolvedValue({
     canProceed: true,
+    blockers: [],
     warnings: [],
-    requiresEnhancedVerification: false,
+    riskScore: 'low',
+    tier: {
+      id: 'starter',
+      name: 'Starter',
+      dailyLimit: 500,
+      monthlyLimit: 2000,
+      yearlyLimit: 10000,
+      singleTransactionLimit: 250,
+      description: 'Starter',
+      requirements: [],
+      benefits: [],
+    },
   }),
   recordSuccessfulTransfer: jest.fn().mockResolvedValue({}),
+};
+
+const mockFraudService = {
+  assessTransfer: jest.fn().mockReturnValue({
+    score: 12,
+    level: 'low',
+    flags: [],
+    requiresReview: false,
+  }),
+  logAbnormalActivity: jest.fn(),
 };
 
 const mockEventBus = {
@@ -33,6 +55,7 @@ describe('TransferLifecycle', () => {
       mockRepository,
       mockWalletService as any,
       mockComplianceService as any,
+      mockFraudService as any,
       mockEventBus as any
     );
   });
@@ -183,6 +206,7 @@ describe('TransferLifecycle', () => {
         destinationCountry: undefined,
         tierId: undefined,
       });
+      expect(mockFraudService.assessTransfer).toHaveBeenCalled();
     });
 
     it('should reserve funds through wallet service', async () => {
@@ -204,7 +228,13 @@ describe('TransferLifecycle', () => {
       expect(mockEventBus.publish).toHaveBeenCalledWith({
         type: 'transfer.created',
         timestamp: expect.any(String),
-        payload: { transferId: 'test-key-123', amount: 100, currency: 'USDC' },
+        payload: {
+          userId: 'user-1',
+          transferId: 'test-key-123',
+          amount: 100,
+          currency: 'USDC',
+          recipientName: 'Recipient',
+        },
       });
     });
   });
