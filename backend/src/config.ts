@@ -39,6 +39,10 @@ export interface AppConfig {
     settlementDelayMs: number;
     maxSettlementAttempts: number;
   };
+  performance: {
+    healthCacheTtlMs: number;
+    activityCacheTtlMs: number;
+  };
   features: {
     enableEscrow: boolean;
     enableRiskScoring: boolean;
@@ -98,6 +102,10 @@ export const config: AppConfig = {
   queues: {
     settlementDelayMs: intFromEnv(process.env.WORKER_DELAY_MS, 2000),
     maxSettlementAttempts: intFromEnv(process.env.SETTLEMENT_MAX_ATTEMPTS, 3),
+  },
+  performance: {
+    healthCacheTtlMs: intFromEnv(process.env.HEALTH_CACHE_TTL_MS, 15000),
+    activityCacheTtlMs: intFromEnv(process.env.ACTIVITY_CACHE_TTL_MS, 10000),
   },
   features: {
     enableEscrow: boolFromEnv(process.env.FEATURE_ESCROW, true),

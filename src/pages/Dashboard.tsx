@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BalanceCard } from '@/components/BalanceCard';
@@ -8,9 +9,11 @@ import { BottomNav } from '@/components/BottomNav';
 import WalletConnectionDialog, { WalletStatusIndicator, WalletBalanceCard } from '@/components/WalletConnection';
 import { WalletTransactionHistory } from '@/components/TransactionSigning';
 import { ComplianceDashboard } from '@/components/ComplianceDashboard';
+import { NotificationFeed } from '@/components/NotificationFeed';
+import { SpendingInsightsCard } from '@/components/SpendingInsightsCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
-import { transactions } from '@/data/mockData';
+import { fetchNotifications, fetchSpendingInsights, fetchTransactions } from '@/lib/activity';
 import { Send, Plus, Bell, ArrowRight, Shield, Info, Zap, Clock, TrendingDown, Star, CheckCircle2, Globe2, Award, Wallet, ExternalLink, MapPin } from 'lucide-react';
 
 export default function Dashboard() {
@@ -18,8 +21,21 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { connectionState } = useWallet();
   const [showWalletDialog, setShowWalletDialog] = useState(false);
+  const transactionsQuery = useQuery({
+    queryKey: ['activity', 'transactions', 3],
+    queryFn: () => fetchTransactions(3),
+  });
+  const notificationsQuery = useQuery({
+    queryKey: ['notifications', 4],
+    queryFn: () => fetchNotifications(4),
+  });
+  const insightsQuery = useQuery({
+    queryKey: ['activity', 'insights'],
+    queryFn: fetchSpendingInsights,
+  });
 
-  const recentTransactions = transactions.slice(0, 3);
+  const recentTransactions = transactionsQuery.data || [];
+  const unreadNotifications = notificationsQuery.data?.unreadCount || 0;
   const isNewUser = user?.createdAt && 
     new Date().getTime() - new Date(user.createdAt).getTime() < 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -51,9 +67,16 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-          <button className="relative p-3 rounded-xl bg-card shadow-card hover:bg-secondary transition-colors">
+          <button
+            className="relative p-3 rounded-xl bg-card shadow-card hover:bg-secondary transition-colors"
+            onClick={() => navigate('/history')}
+          >
             <Bell className="w-5 h-5 text-foreground" />
-            <span className="absolute top-2 right-2 w-2 h-2 bg-destructive rounded-full" />
+            {unreadNotifications > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-destructive text-[10px] font-semibold text-destructive-foreground flex items-center justify-center">
+                {unreadNotifications}
+              </span>
+            )}
           </button>
         </div>
       </header>
@@ -101,6 +124,16 @@ export default function Dashboard() {
 
           {/* Compliance Dashboard - Compact View */}
           <ComplianceDashboard compact={true} showUpgradePrompt={true} />
+
+          <SpendingInsightsCard
+            insights={insightsQuery.data?.summary}
+            isLoading={insightsQuery.isLoading}
+          />
+
+          <NotificationFeed
+            notifications={notificationsQuery.data?.items || []}
+            unreadCount={unreadNotifications}
+          />
 
           {/* How It Works - Brief Overview */}
           {isNewUser && (
@@ -295,25 +328,6 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {/* Quick Stats */}
-          <div className="bg-card rounded-xl p-4 shadow-card">
-            <h3 className="font-semibold text-foreground mb-3">This Month</h3>
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div>
-                <p className="text-2xl font-bold text-foreground">$850</p>
-                <p className="text-xs text-muted-foreground">Total Sent</p>
-              </div>
-              <div className="border-x border-border">
-                <p className="text-2xl font-bold text-success">$2.50</p>
-                <p className="text-xs text-muted-foreground">Fees Saved</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">12</p>
-                <p className="text-xs text-muted-foreground">Transfers</p>
-              </div>
-            </div>
-          </div>
-
           {/* Recent Transactions */}
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -328,7 +342,11 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-3">
-              {recentTransactions.length > 0 ? (
+              {transactionsQuery.isLoading ? (
+                Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="h-24 rounded-xl bg-muted animate-pulse" />
+                ))
+              ) : recentTransactions.length > 0 ? (
                 recentTransactions.map((transaction) => (
                   <TransactionItem
                     key={transaction.id}
@@ -351,6 +369,12 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+
+            {transactionsQuery.isError && (
+              <p className="mt-3 text-sm text-destructive">
+                We couldn&apos;t load recent transactions right now.
+              </p>
+            )}
           </div>
 
           {/* Regulatory Compliance & Trust */}

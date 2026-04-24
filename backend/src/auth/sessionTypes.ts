@@ -21,6 +21,7 @@ export interface Session {
   verified: boolean;
   hasWallet: boolean;
   onboardingCompleted: boolean;
+  transactionSigningSecret: string;
   user?: PublicUser;
 }
 

@@ -24,6 +24,7 @@ pub enum TransferStatus {
     Released,
     Refunded,
     Cancelled,
+    Disputed,
 }
 
 #[derive(Clone)]
@@ -175,7 +176,18 @@ impl RemittanceEscrow {
     }
 
     pub fn cancel(env: Env, id: BytesN<32>) -> Transfer {
+        let transfer = read_transfer(&env, &id)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::TransferMissing));
+        
+        if transfer.status == TransferStatus::Disputed {
+            panic_with_error!(&env, Error::TransferFinalized); // Reusing finalized or could add dedicated error
+        }
+        
         Self::advance(env, id, TransferStatus::Cancelled, None)
+    }
+
+    pub fn dispute(env: Env, id: BytesN<32>) -> Transfer {
+        Self::advance(env, id, TransferStatus::Disputed, None)
     }
 
     pub fn get(env: Env, id: BytesN<32>) -> Option<Transfer> {
@@ -224,6 +236,7 @@ impl RemittanceEscrow {
             TransferStatus::Released => symbol_short!("released"),
             TransferStatus::Refunded => symbol_short!("refunded"),
             TransferStatus::Cancelled => symbol_short!("cancelled"),
+            TransferStatus::Disputed => symbol_short!("disputed"),
             TransferStatus::Held => symbol_short!("held"),
             TransferStatus::Created => symbol_short!("created"),
         };

@@ -1,3 +1,5 @@
+import type { TransactionRiskSummary } from './activity';
+
 export interface User {
   id: string;
   name: string;
@@ -52,6 +54,9 @@ export interface Transaction {
   timestamp: Date;
   exchangeRate?: number;
   destinationCurrency?: string;
+  category?: string;
+  notes?: string;
+  risk?: TransactionRiskSummary;
 }
 
 export interface FeeBreakdown {

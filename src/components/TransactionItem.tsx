@@ -2,8 +2,10 @@ import { memo } from 'react';
 import { ArrowUpRight, ArrowDownLeft, Phone, Receipt } from 'lucide-react';
 import { Transaction } from '@/types';
 import { StatusBadge } from './StatusBadge';
+import { Badge } from './ui/badge';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
+import { splitFee } from '@/lib/fees';
 
 interface TransactionItemProps {
   transaction: Transaction;
@@ -13,6 +15,7 @@ interface TransactionItemProps {
 
 function TransactionItemComponent({ transaction, onClick, showDetailedView = false }: TransactionItemProps) {
   const isSend = transaction.type === 'send';
+  const feeSplit = splitFee(transaction.fee, { network: 0.1, service: 0.9 });
 
   return (
     <button
@@ -59,6 +62,22 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
         </div>
       </div>
 
+      {transaction.risk && transaction.risk.level !== 'low' && (
+        <div className="flex justify-start">
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-[11px]',
+              transaction.risk.level === 'high'
+                ? 'border-red-300 text-red-700 bg-red-50 dark:bg-red-900/20'
+                : 'border-amber-300 text-amber-700 bg-amber-50 dark:bg-amber-900/20',
+            )}
+          >
+            {transaction.risk.level === 'high' ? 'Fraud Review' : 'Risk Flag'} • Score {transaction.risk.score}
+          </Badge>
+        </div>
+      )}
+
       {/* Detailed Information */}
       {showDetailedView && (
         <div className="border-t border-border/50 pt-3 space-y-3">
@@ -93,11 +112,11 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Network fee</span>
-                  <span className="font-medium">${(transaction.fee * 0.1).toFixed(3)}</span>
+                  <span className="font-medium">${feeSplit.networkFee.toFixed(3)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Service fee</span>
-                  <span className="font-medium">${(transaction.fee * 0.9).toFixed(2)}</span>
+                  <span className="font-medium">${feeSplit.serviceFee.toFixed(2)}</span>
                 </div>
                 <div className="border-t border-border/50 pt-1 mt-2">
                   <div className="flex justify-between font-semibold">
@@ -112,6 +131,31 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {transaction.risk && transaction.risk.flags.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 dark:border-amber-800 dark:bg-amber-900/20">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                  Fraud Detection Flags
+                </p>
+                <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                  Score {transaction.risk.score}/100
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {transaction.risk.flags.map((flag) => (
+                  <Badge key={flag.code} variant="outline" className="border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-200">
+                    {flag.label}
+                  </Badge>
+                ))}
+              </div>
+              {transaction.notes && (
+                <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">
+                  {transaction.notes}
+                </p>
+              )}
             </div>
           )}
 
