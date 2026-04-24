@@ -81,7 +81,7 @@ jobs:
           if [ -f "$contract/Cargo.toml" ]; then
             echo "Testing $contract"
             cd "$contract"
-            cargo test
+            cargo test --target x86_64-unknown-linux-gnu
             cd ..
           fi
         done

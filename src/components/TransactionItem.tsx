@@ -171,6 +171,11 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
                 ⏳ Processing on Stellar network • 3-5 seconds remaining
               </p>
             )}
+            {transaction.status === 'processing' && (
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                🌐 Confirming on-chain • Waiting for final ledger confirmation
+              </p>
+            )}
             {transaction.status === 'failed' && (
               <p className="text-xs text-red-600 dark:text-red-400">
                 ❌ Transaction failed • USDC returned to your wallet

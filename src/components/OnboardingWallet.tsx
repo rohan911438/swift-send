@@ -65,9 +65,7 @@ export default function OnboardingWallet() {
         <div className="flex-1 flex items-center justify-center px-6">
           <div className="max-w-lg mx-auto text-center">
             <div className="w-20 h-20 mx-auto rounded-full bg-primary/10 flex items-center justify-center mb-6">
-              <div className="animate-spin">
-                <Sparkles className="w-10 h-10 text-primary" />
-              </div>
+              <Sparkles className="w-10 h-10 text-primary" />
             </div>
             
             <h1 className="text-2xl font-bold text-foreground mb-3">

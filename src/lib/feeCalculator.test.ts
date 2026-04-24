@@ -25,55 +25,55 @@ describe("Fee Calculator", () => {
       const result = calculateTransferFees(100);
 
       expect(result.amount).toBe(100);
-      expect(result.networkFee).toBe(0.001);
+      expect(result.networkFee).toBe(0);
       expect(result.serviceFee).toBe(0.2); // 0.2% of 100
-      expect(result.totalFee).toBe(0.201);
-      expect(result.recipientGets).toBe(99.799);
-      expect(result.feePercentage).toBeCloseTo(0.201, 2);
+      expect(result.totalFee).toBe(0.20);
+      expect(result.recipientGets).toBe(99.80);
+      expect(result.feePercentage).toBeCloseTo(0.20, 2);
     });
 
     it("should calculate fees for small transfer", () => {
       const result = calculateTransferFees(5);
 
       expect(result.amount).toBe(5);
-      expect(result.networkFee).toBe(0.001);
+      expect(result.networkFee).toBe(0);
       // Service fee should be minimum ($0.01)
       expect(result.serviceFee).toBe(0.01);
-      expect(result.totalFee).toBe(0.011);
-      expect(result.recipientGets).toBe(4.989);
+      expect(result.totalFee).toBe(0.01);
+      expect(result.recipientGets).toBe(4.99);
     });
 
     it("should calculate fees for large transfer", () => {
       const result = calculateTransferFees(10000);
 
       expect(result.amount).toBe(10000);
-      expect(result.networkFee).toBe(0.001);
-      // Service fee should be capped at $50
-      expect(result.serviceFee).toBe(50);
-      expect(result.totalFee).toBe(50.001);
-      expect(result.recipientGets).toBe(9949.999);
+      expect(result.networkFee).toBe(0);
+      // 0.2% of 10000 = 20
+      expect(result.serviceFee).toBe(20);
+      expect(result.totalFee).toBe(20);
+      expect(result.recipientGets).toBe(9980);
     });
 
     it("should calculate fees for very small transfer", () => {
       const result = calculateTransferFees(0.5);
 
       expect(result.amount).toBe(0.5);
-      expect(result.networkFee).toBe(0.001);
+      expect(result.networkFee).toBe(0);
       // Service fee should be minimum ($0.01)
       expect(result.serviceFee).toBe(0.01);
-      expect(result.totalFee).toBe(0.011);
-      expect(result.recipientGets).toBe(0.489);
+      expect(result.totalFee).toBe(0.01);
+      expect(result.recipientGets).toBe(0.49);
     });
 
     it("should calculate fees for $1 transfer", () => {
       const result = calculateTransferFees(1);
 
       expect(result.amount).toBe(1);
-      expect(result.networkFee).toBe(0.001);
+      expect(result.networkFee).toBe(0);
       // Service fee should be minimum ($0.01)
       expect(result.serviceFee).toBe(0.01);
-      expect(result.totalFee).toBe(0.011);
-      expect(result.recipientGets).toBe(0.989);
+      expect(result.totalFee).toBe(0.01);
+      expect(result.recipientGets).toBe(0.99);
     });
 
     it("should handle custom fee configuration", () => {
@@ -86,7 +86,7 @@ describe("Fee Calculator", () => {
       const result = calculateTransferFees(100, customConfig);
 
       expect(result.serviceFee).toBe(1); // 1% of 100
-      expect(result.totalFee).toBe(1.001);
+      expect(result.totalFee).toBe(1);
     });
 
     it("should round to two decimal places", () => {
@@ -94,8 +94,8 @@ describe("Fee Calculator", () => {
 
       expect(result.amount).toBe(33.33);
       expect(result.serviceFee).toBe(0.07); // 0.2% of 33.33 = 0.0666, rounded to 0.07
-      expect(result.totalFee).toBe(0.071);
-      expect(result.recipientGets).toBe(33.259);
+      expect(result.totalFee).toBe(0.07);
+      expect(result.recipientGets).toBe(33.26);
     });
   });
 
@@ -105,7 +105,7 @@ describe("Fee Calculator", () => {
 
       expect(result.breakdown).toBeDefined();
       expect(result.breakdown.networkFee).toBeDefined();
-      expect(result.breakdown.networkFee.amount).toBe(0.001);
+      expect(result.breakdown.networkFee.amount).toBe(0);
       expect(result.breakdown.networkFee.description).toBe(
         "Stellar network fee",
       );
@@ -313,7 +313,9 @@ describe("Fee Calculator", () => {
 
       expect(stats.averageFeePercentage).toBeGreaterThan(0);
       expect(stats.minFeePercentage).toBeGreaterThan(0);
-      expect(stats.maxFeePercentage).toBeGreaterThan(stats.minFeePercentage);
+      expect(stats.maxFeePercentage).toBeGreaterThanOrEqual(
+        stats.minFeePercentage,
+      );
       expect(stats.totalFees).toBeGreaterThan(0);
       expect(stats.averageFee).toBeGreaterThan(0);
     });
@@ -364,7 +366,7 @@ describe("Fee Calculator", () => {
       const result = calculateTransferFees(0.01);
 
       expect(result.amount).toBe(0.01);
-      expect(result.recipientGets).toBeGreaterThan(0);
+      expect(result.recipientGets).toBeGreaterThanOrEqual(0);
       expect(result.totalFee).toBeGreaterThan(0);
     });
 

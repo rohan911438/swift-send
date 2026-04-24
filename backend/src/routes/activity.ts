@@ -17,7 +17,7 @@ export default async function activityRoutes(fastify: FastifyInstance) {
       const limit = sanitizeLimit(req.query?.limit, 50, 100);
       reply.header('Cache-Control', 'private, max-age=10');
       return {
-        items: await fastify.container.services.activity.listTransactions(session.user.id, limit),
+        items: await fastify.container.services.activity.listTransactions(session.user!.id, limit),
       };
     },
   );
@@ -29,7 +29,7 @@ export default async function activityRoutes(fastify: FastifyInstance) {
       const session = requireSessionUser(req.user as JwtSessionPayload, reply);
       if (!session) return;
       reply.header('Cache-Control', 'private, max-age=10');
-      return fastify.container.services.activity.getSpendingInsights(session.user.id);
+      return fastify.container.services.activity.getSpendingInsights(session.user!.id);
     },
   );
 
@@ -40,7 +40,7 @@ export default async function activityRoutes(fastify: FastifyInstance) {
       const session = requireSessionUser(req.user as JwtSessionPayload, reply);
       if (!session) return;
       const limit = sanitizeLimit(req.query?.limit, 10, 50);
-      return fastify.container.services.notifications.listByUserId(session.user.id, limit);
+      return fastify.container.services.notifications.listByUserId(session.user!.id, limit);
     },
   );
 
@@ -52,7 +52,7 @@ export default async function activityRoutes(fastify: FastifyInstance) {
       if (!session) return;
       const notificationId = (req.params as { id: string }).id;
       const notification = fastify.container.services.notifications.markAsRead(
-        session.user.id,
+        session.user!.id,
         notificationId,
       );
 

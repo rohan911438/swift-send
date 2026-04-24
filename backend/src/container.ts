@@ -45,7 +45,7 @@ export function createContainer(): AppContainer {
   eventBus.subscribe<{ userId: string }>('transfer.created', (event) => {
     activity.invalidateUser(event.payload.userId);
   });
-  eventBus.subscribe<{ userId: string }>('transfer.settled', async (event) => {
+  eventBus.subscribe<{ userId: string; transferId: string; amount: number; recipientName: string }>('transfer.settled', async (event) => {
     activity.invalidateUser(event.payload.userId);
     await notifications.notifyTransferSettled(event.payload);
   });

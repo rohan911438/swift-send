@@ -128,6 +128,7 @@ const History: React.FC = () => {
 
   const statusOptions = [
     { value: 'all', label: 'All Status' },
+    { value: 'processing', label: 'Processing' },
     { value: 'completed', label: 'Completed' },
     { value: 'pending', label: 'Pending' },
     { value: 'failed', label: 'Failed' }

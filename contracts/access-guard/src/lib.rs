@@ -127,12 +127,11 @@ impl AccessGuard {
 
     /// Set the gate state (open/closed)
     /// Permission: Admin only
-    pub fn set_gate(env: Env, open: bool) {
-        let caller = env.invoker();
-        caller.require_auth();
+    pub fn set_gate(env: Env, admin: Address, open: bool) {
+        admin.require_auth();
         
         // Verify caller has admin privileges
-        if !is_admin(&env, &caller) {
+        if !is_admin(&env, &admin) {
             panic!("insufficient permissions: admin role required");
         }
         
@@ -142,12 +141,11 @@ impl AccessGuard {
 
     /// Add or remove an address from the allowed list
     /// Permission: Admin only
-    pub fn set_allow(env: Env, addr: Address, allow: bool) {
-        let caller = env.invoker();
-        caller.require_auth();
+    pub fn set_allow(env: Env, admin: Address, addr: Address, allow: bool) {
+        admin.require_auth();
         
         // Verify caller has admin privileges
-        if !is_admin(&env, &caller) {
+        if !is_admin(&env, &admin) {
             panic!("insufficient permissions: admin role required");
         }
         
@@ -157,12 +155,11 @@ impl AccessGuard {
 
     /// Assign a role to an address
     /// Permission: Admin only
-    pub fn assign_role(env: Env, addr: Address, role: Role) {
-        let caller = env.invoker();
-        caller.require_auth();
+    pub fn assign_role(env: Env, admin: Address, addr: Address, role: Role) {
+        admin.require_auth();
         
         // Verify caller has admin privileges
-        if !is_admin(&env, &caller) {
+        if !is_admin(&env, &admin) {
             panic!("insufficient permissions: admin role required");
         }
         

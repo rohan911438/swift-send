@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import { StellarAccount, StellarWallet, WalletTransaction, WalletProvider, WalletConnectionState } from '@/types';
 import { toast } from 'sonner';
 
@@ -16,6 +16,23 @@ interface WalletContextType {
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
+const WALLET_TX_STORAGE_KEY = 'stellar-wallet-transactions';
+const HORIZON_URL = (import.meta.env.VITE_STELLAR_HORIZON_URL as string | undefined) || 'https://horizon-testnet.stellar.org';
+
+function parseStoredTransactions(raw: string | null): WalletTransaction[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as Array<Omit<WalletTransaction, 'createdAt'> & { createdAt: string }>;
+    return parsed.map((tx) => ({ ...tx, createdAt: new Date(tx.createdAt) }));
+  } catch {
+    return [];
+  }
+}
+
+function toStableTxId() {
+  return `wtx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [connectionState, setConnectionState] = useState<WalletConnectionState>({
     isConnected: false
@@ -23,6 +40,49 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSigningTransaction, setIsSigningTransaction] = useState(false);
   const [walletDetectionTrigger, setWalletDetectionTrigger] = useState(0);
+  const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>(() =>
+    parseStoredTransactions(localStorage.getItem(WALLET_TX_STORAGE_KEY))
+  );
+
+  const syncPendingTransactions = useCallback(async () => {
+    const needsSync = walletTransactions.filter((tx) => tx.status === 'submitted' && tx.stellarHash);
+    if (needsSync.length === 0) return;
+
+    const synced = await Promise.all(
+      walletTransactions.map(async (tx) => {
+        if (tx.status !== 'submitted' || !tx.stellarHash) return tx;
+
+        try {
+          const res = await fetch(`${HORIZON_URL}/transactions/${tx.stellarHash}`);
+          if (res.ok) {
+            return { ...tx, status: 'success' as const };
+          }
+          // Keep submitted while pending/not indexed yet.
+          return tx;
+        } catch {
+          return tx;
+        }
+      })
+    );
+
+    const changed = synced.some((tx, idx) => tx.status !== walletTransactions[idx]?.status);
+    if (changed) {
+      setWalletTransactions(synced);
+    }
+  }, [walletTransactions]);
+
+  useEffect(() => {
+    localStorage.setItem(WALLET_TX_STORAGE_KEY, JSON.stringify(walletTransactions));
+  }, [walletTransactions]);
+
+  useEffect(() => {
+    if (!connectionState.isConnected) return;
+    void syncPendingTransactions();
+    const interval = setInterval(() => {
+      void syncPendingTransactions();
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [connectionState.isConnected, syncPendingTransactions]);
 
   // Enhanced Freighter detection with immediate and continuous checking
   useEffect(() => {
@@ -460,6 +520,23 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
 
       const mockTxHash = `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      setWalletTransactions((prev) => [
+        {
+          id: toStableTxId(),
+          hash: mockTxHash,
+          type: 'payment',
+          amount: String(transaction?.amount ?? ''),
+          asset: String(transaction?.asset ?? 'USDC'),
+          destination: String(transaction?.destination ?? ''),
+          memo: transaction?.memo ? String(transaction.memo) : undefined,
+          status: 'submitted',
+          createdAt: new Date(),
+          stellarHash: mockTxHash,
+          networkFee: '0.00001',
+        },
+        ...prev,
+      ]);
       
       toast.success('Transaction signed successfully!', {
         description: 'Your transaction has been submitted to the network'
@@ -499,33 +576,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const getRecentTransactions = async (): Promise<WalletTransaction[]> => {
     if (!connectionState.isConnected) return [];
 
-    // Mock recent transactions
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    return [
-      {
-        id: 'tx_1',
-        hash: 'abc123...def456',
-        type: 'payment',
-        amount: '25.50',
-        asset: 'USDC',
-        destination: 'GEXAMPLE...RECIPIENT',
-        status: 'success',
-        createdAt: new Date(Date.now() - 86400000), // 1 day ago
-        stellarHash: 'abc123def456789...',
-        networkFee: '0.00001'
-      },
-      {
-        id: 'tx_2',
-        type: 'payment',
-        amount: '100.00',
-        asset: 'USDC',
-        destination: 'GANOTHER...RECIPIENT',
-        status: 'pending',
-        createdAt: new Date(Date.now() - 3600000), // 1 hour ago
-        networkFee: '0.00001'
-      }
-    ];
+    await syncPendingTransactions();
+    return [...walletTransactions].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   };
 
   // Auto-reconnect on page load if previously connected
