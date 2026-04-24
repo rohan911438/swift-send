@@ -1,6 +1,12 @@
-import { apiFetch } from '@/lib/api';
+import { apiFetch } from "@/lib/api";
 
-type JsonLike = null | boolean | number | string | JsonLike[] | { [key: string]: JsonLike };
+type JsonLike =
+  | null
+  | boolean
+  | number
+  | string
+  | JsonLike[]
+  | { [key: string]: JsonLike };
 
 export interface TransferCreatePayload {
   idempotency_key: string;
@@ -9,7 +15,7 @@ export interface TransferCreatePayload {
   amount: number;
   currency: string;
   recipient: {
-    type: 'wallet' | 'cash_pickup' | 'bank';
+    type: "wallet" | "cash_pickup" | "bank";
     wallet_public_key?: string;
     partner_code?: string;
     country?: string;
@@ -33,7 +39,7 @@ export interface QueuedTransferResponse {
 
 export interface QueueJobStatus {
   queue_job_id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: "pending" | "processing" | "completed" | "failed";
   error?: string;
   created_at: string;
   started_at?: string;
@@ -45,7 +51,7 @@ function sortValue(value: JsonLike): JsonLike {
     return value.map((item) => sortValue(item));
   }
 
-  if (value && typeof value === 'object') {
+  if (value && typeof value === "object") {
     return Object.keys(value)
       .sort()
       .reduce<Record<string, JsonLike>>((accumulator, key) => {
@@ -67,38 +73,68 @@ export function canonicalizeTransferPayload(payload: TransferCreatePayload): str
 async function signPayload(payload: string, secret: string): Promise<string> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
-    'raw',
+    "raw",
     encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
+    { name: "HMAC", hash: "SHA-256" },
     false,
-    ['sign']
+    ["sign"],
   );
-  const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
+  const signatureBuffer = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(payload),
+  );
   return Array.from(new Uint8Array(signatureBuffer))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-export async function createTransfer(payload: TransferCreatePayload, transactionSigningSecret: string): Promise<QueuedTransferResponse> {
-  const signature = await signPayload(canonicalizeTransferPayload(payload), transactionSigningSecret);
-  const response = await apiFetch('/transfers', {
-    method: 'POST',
+export async function createTransfer(
+  payload: TransferCreatePayload,
+  transactionSigningSecret: string,
+): Promise<QueuedTransferResponse> {
+  const signature = await signPayload(
+    canonicalizeTransferPayload(payload),
+    transactionSigningSecret,
+  );
+  const response = await apiFetch("/transfers", {
+    method: "POST",
     body: JSON.stringify({ ...payload, signature }),
   });
 
-  const body = (await response.json().catch(() => ({}))) as { error?: string };
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = {};
+  }
+
   if (!response.ok) {
-    throw new Error(body.error || 'Transfer failed');
+    const errorBody = body as { error?: string; details?: unknown };
+    const errorMessage = errorBody.error || "Transfer failed";
+    const error = new Error(errorMessage);
+    (error as any).details = errorBody.details;
+    (error as any).statusCode = response.status;
+    throw error;
   }
 
   return body as QueuedTransferResponse;
 }
 
-export async function checkTransferQueueStatus(jobId: string): Promise<QueueJobStatus> {
+export async function checkTransferQueueStatus(
+  jobId: string,
+): Promise<QueueJobStatus> {
   const response = await apiFetch(`/transfers/${jobId}/status`);
-  const body = (await response.json().catch(() => ({}))) as { error?: string };
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = {};
+  }
+
   if (!response.ok) {
-    throw new Error(body.error || 'Failed to check transfer status');
+    const errorBody = body as { error?: string };
+    throw new Error(errorBody.error || "Failed to check transfer status");
   }
 
   return body as QueueJobStatus;
