@@ -1,6 +1,7 @@
 /**
  * Rate limiting for authentication endpoints
  * Prevents brute-force attacks and abuse
+ * Supports both IP-based and user-based rate limiting
  */
 
 import { logger } from "../logger";
@@ -16,11 +17,18 @@ export interface RateLimitEntry {
   firstAttemptAt: number;
   lastAttemptAt: number;
   lockedUntil?: number;
+  ipAddresses: string[]; // Track IPs for this key
+}
+
+export interface RateLimitInfo {
+  isLimited: boolean;
+  remainingAttempts: number;
+  retryAfterSeconds?: number;
 }
 
 export class RateLimiter {
   private attempts = new Map<string, RateLimitEntry>();
-  private cleanupInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: any = null;
 
   constructor(
     private config: RateLimitConfig = {
@@ -31,6 +39,44 @@ export class RateLimiter {
   ) {
     // Clean up old entries every 5 minutes
     this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000);
+  }
+
+  /**
+   * Get rate limit information
+   */
+  getRateLimitInfo(key: string): RateLimitInfo {
+    const entry = this.attempts.get(key);
+    
+    if (!entry) {
+      return {
+        isLimited: false,
+        remainingAttempts: this.config.maxAttempts,
+      };
+    }
+
+    // Check if locked out
+    if (entry.lockedUntil && Date.now() < entry.lockedUntil) {
+      return {
+        isLimited: true,
+        remainingAttempts: 0,
+        retryAfterSeconds: Math.ceil((entry.lockedUntil - Date.now()) / 1000),
+      };
+    }
+
+    // Check if window has expired
+    if (Date.now() - entry.firstAttemptAt > this.config.windowMs) {
+      return {
+        isLimited: false,
+        remainingAttempts: this.config.maxAttempts,
+      };
+    }
+
+    const remaining = Math.max(0, this.config.maxAttempts - entry.attempts);
+    return {
+      isLimited: entry.attempts >= this.config.maxAttempts,
+      remainingAttempts: remaining,
+      retryAfterSeconds: remaining === 0 ? this.getRemainingSeconds(key) : undefined,
+    };
   }
 
   /**
@@ -78,7 +124,7 @@ export class RateLimiter {
   /**
    * Record an attempt
    */
-  recordAttempt(key: string): void {
+  recordAttempt(key: string, ipAddress?: string): void {
     const entry = this.attempts.get(key);
     const now = Date.now();
 
@@ -87,6 +133,7 @@ export class RateLimiter {
         attempts: 1,
         firstAttemptAt: now,
         lastAttemptAt: now,
+        ipAddresses: ipAddress ? [ipAddress] : [],
       });
       return;
     }
@@ -97,6 +144,7 @@ export class RateLimiter {
         attempts: 1,
         firstAttemptAt: now,
         lastAttemptAt: now,
+        ipAddresses: ipAddress ? [ipAddress] : [],
       });
       return;
     }
@@ -105,11 +153,16 @@ export class RateLimiter {
     entry.attempts += 1;
     entry.lastAttemptAt = now;
 
+    // Track IP if provided
+    if (ipAddress && !entry.ipAddresses.includes(ipAddress)) {
+      entry.ipAddresses.push(ipAddress);
+    }
+
     // Lock out if max attempts reached
     if (entry.attempts >= this.config.maxAttempts) {
       entry.lockedUntil = now + this.config.lockoutDurationMs;
       logger.warn(
-        { key, attempts: entry.attempts, lockedUntil: entry.lockedUntil },
+        { key, attempts: entry.attempts, lockedUntil: entry.lockedUntil, ipAddresses: entry.ipAddresses },
         "Rate limit exceeded, account locked",
       );
     }

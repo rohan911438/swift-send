@@ -110,6 +110,38 @@ export class NotificationService {
     });
   }
 
+  async notifySuspiciousActivity(payload: {
+    userId: string;
+    alertId: string;
+    alertType: string;
+    severity: string;
+    transferId: string;
+  }) {
+    const titles: Record<string, string> = {
+      large_transfer: 'Large Transfer Alert',
+      unusual_location: 'Unusual Location Detected',
+      rapid_succession: 'Rapid Transfer Activity',
+      pattern_anomaly: 'Unusual Pattern Detected',
+      high_risk_destination: 'High-Risk Destination Alert',
+    };
+
+    const descriptions: Record<string, string> = {
+      large_transfer: 'A unusually large transfer was detected and flagged for your review.',
+      unusual_location: 'We detected a transfer from an unrecognized location.',
+      rapid_succession: 'Multiple transfers were made in a short time period.',
+      pattern_anomaly: 'We noticed unusual patterns in your transfer activity.',
+      high_risk_destination: 'A transfer to a high-risk jurisdiction was detected.',
+    };
+
+    return this.createForUser(payload.userId, {
+      transferId: payload.transferId,
+      type: 'warning',
+      title: titles[payload.alertType] || 'Suspicious Activity Alert',
+      message: descriptions[payload.alertType] || 'Unusual activity was detected on your account.',
+      metadata: { kind: 'suspicious_activity', alertId: payload.alertId, alertType: payload.alertType, severity: payload.severity },
+    });
+  }
+
   private createForUser(
     userId: string,
     input: {

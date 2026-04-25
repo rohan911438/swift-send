@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { config, isProd } from '../config';
 import type { JwtSessionPayload, PublicUser } from '../auth/sessionTypes';
 import {
@@ -10,6 +10,7 @@ import {
   saveSession,
 } from '../auth/sessionStore';
 import { authenticate } from '../middleware/authenticate';
+import { loginRateLimiter, verifyRateLimiter } from '../auth/rateLimiter';
 
 interface LoginBody {
   identifier: string;
@@ -67,6 +68,10 @@ function clearAuthCookie(reply: FastifyReply) {
   });
 }
 
+function getClientIp(request: FastifyRequest): string {
+  return (request.ip || request.headers['x-forwarded-for'] || 'unknown') as string;
+}
+
 function isValidVerificationCode(code: string): boolean {
   const dev = config.env === 'development' || config.env === 'test';
   if (dev) return code.length === 6 && /^\d{6}$/.test(code);
@@ -80,11 +85,34 @@ export default async function authRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'identifier is required' });
     }
 
+    // Rate limiting by IP and identifier
+    const clientIp = getClientIp(request);
+    const rateLimitKey = `login:${identifier}`;
+    const ipRateLimitKey = `login_ip:${clientIp}`;
+    
+    // Check both identifier-based and IP-based rate limits
+    if (loginRateLimiter.isLimited(rateLimitKey)) {
+      const retryAfter = loginRateLimiter.getRemainingSeconds(rateLimitKey);
+      return reply.status(429).send({
+        error: 'Too many login attempts. Please try again later.',
+        retry_after: retryAfter,
+      });
+    }
+
+    if (loginRateLimiter.isLimited(ipRateLimitKey)) {
+      const retryAfter = loginRateLimiter.getRemainingSeconds(ipRateLimitKey);
+      return reply.status(429).send({
+        error: 'Too many attempts from this IP. Please try again later.',
+        retry_after: retryAfter,
+      });
+    }
+
     const isEmail = identifier.includes('@');
 
     if (isMariaIdentifier(identifier)) {
       const session = createMariaSession();
       await setAuthCookie(reply, session);
+      loginRateLimiter.reset(rateLimitKey);
       return reply.send({
         needsVerification: false,
         isNewUser: false,
@@ -96,6 +124,11 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
     const session = createNewUserSession(isEmail ? identifier.toLowerCase() : undefined, isEmail ? undefined : identifier);
     await setAuthCookie(reply, session);
+    
+    // Record the attempt
+    loginRateLimiter.recordAttempt(rateLimitKey, clientIp);
+    loginRateLimiter.recordAttempt(ipRateLimitKey, clientIp);
+    
     return reply.send({
       needsVerification: true,
       isNewUser: true,
@@ -126,11 +159,26 @@ export default async function authRoutes(fastify: FastifyInstance) {
     if (!code) {
       return reply.status(400).send({ error: 'code is required' });
     }
+
+    // Rate limiting for verification
+    const token = request.user as JwtSessionPayload;
+    const clientIp = getClientIp(request);
+    const verifyRateLimitKey = `verify:${token.sub}`;
+    
+    if (verifyRateLimiter.isLimited(verifyRateLimitKey)) {
+      const retryAfter = verifyRateLimiter.getRemainingSeconds(verifyRateLimitKey);
+      return reply.status(429).send({
+        error: 'Too many verification attempts. Please try again later.',
+        retry_after: retryAfter,
+      });
+    }
+
     if (!isValidVerificationCode(code)) {
+      // Record failed attempt
+      verifyRateLimiter.recordAttempt(verifyRateLimitKey, clientIp);
       return reply.status(400).send({ error: 'Invalid verification code' });
     }
 
-    const token = request.user as JwtSessionPayload;
     const session = getSession(token.sub);
     if (!session) {
       clearAuthCookie(reply);
@@ -145,6 +193,9 @@ export default async function authRoutes(fastify: FastifyInstance) {
     saveSession(session);
 
     await setAuthCookie(reply, session);
+    
+    // Reset on successful verification
+    verifyRateLimiter.reset(verifyRateLimitKey);
 
     return reply.send({
       authUser: sessionToAuthUser(session),

@@ -9,6 +9,7 @@ import authRoutes from './routes/auth';
 import activityRoutes from './routes/activity';
 import adminRoutes from './routes/admin';
 import recurringPaymentRoutes from './routes/recurringPayments';
+import fraudRoutes from './routes/fraud';
 import { config } from './config';
 import { logger } from './logger';
 import { createContainer } from './container';
@@ -70,6 +71,7 @@ export async function buildApp() {
   await app.register(escrowRoutes, { prefix });
   await app.register(adminRoutes, { prefix });
   await app.register(recurringPaymentRoutes, { prefix });
+  await app.register(fraudRoutes, { prefix });
 
   app.addHook('onClose', async () => {
     logger.info('Server shutting down');

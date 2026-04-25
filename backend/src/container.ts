@@ -13,6 +13,7 @@ import { createDemoTransfers } from './modules/transfers/demoTransfers';
 import { InMemoryTransferRepository } from './modules/transfers/inMemoryTransferRepository';
 import { TransferQueue } from './modules/transfers/transferQueue';
 import { TransferLifecycle } from './modules/transfers/transferLifecycle';
+import { IdempotencyService } from './modules/transfers/idempotencyService';
 import { WalletService } from './modules/wallets/walletService';
 import { ContractService } from './services/contractService';
 import { RecurringPaymentService } from './modules/recurring-payments/recurringPaymentService';
@@ -34,13 +35,14 @@ export interface AppContainer {
     contracts: ContractService;
     accessGuard: AccessGuardService;
     recurringPayments: RecurringPaymentService;
+    idempotency: IdempotencyService;
   };
 }
 
 export function createContainer(): AppContainer {
   const eventBus = new EventBus();
   const compliance = new ComplianceService();
-  const fraud = new FraudService();
+  const fraud = new FraudService(eventBus);
   const wallets = new WalletService();
   const contracts = new ContractService();
   const countryMetadata = new CountryMetadataService();
@@ -55,6 +57,7 @@ export function createContainer(): AppContainer {
   const recurringPaymentRepository = new InMemoryRecurringPaymentRepository();
   const recurringPayments = new RecurringPaymentService(recurringPaymentRepository, contracts);
   const recurringWorker = new RecurringPaymentWorker(recurringPayments);
+  const idempotency = new IdempotencyService();
 
   recurringWorker.start();
 
@@ -79,6 +82,13 @@ export function createContainer(): AppContainer {
       await notifications.notifyFraudFlagged(event.payload);
     },
   );
+  eventBus.subscribe<{ userId: string; alertId: string; alertType: string; severity: string; transferId: string }>(
+    'suspicious.activity.detected',
+    async (event) => {
+      activity.invalidateUser(event.payload.userId);
+      await notifications.notifySuspiciousActivity(event.payload);
+    },
+  );
   eventBus.subscribe<{ userId: string }>('notification.created', (event) => {
     activity.invalidateUser(event.payload.userId);
   });
@@ -101,6 +111,7 @@ export function createContainer(): AppContainer {
       contracts,
       accessGuard,
       recurringPayments,
+      idempotency,
     },
   };
 }
