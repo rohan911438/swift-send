@@ -23,9 +23,11 @@ import {
   DrawerTrigger 
 } from '@/components/ui/drawer';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useAuth } from '@/contexts/AuthContext';
 
 const History: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -461,6 +463,7 @@ const History: React.FC = () => {
                   transaction={transaction}
                   showDetailedView={expandedTransactionId === transaction.id}
                   onClick={() => handleTransactionClick(transaction.id)}
+                  senderName={user?.name ?? ''}
                 />
               </div>
             ))}

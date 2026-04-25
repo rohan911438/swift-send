@@ -6,14 +6,16 @@ import { Badge } from './ui/badge';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { splitFee } from '@/lib/fees';
+import { DownloadReceiptButton } from '@/components/DownloadReceiptButton';
 
 interface TransactionItemProps {
   transaction: Transaction;
   onClick?: () => void;
   showDetailedView?: boolean;
+  senderName?: string;
 }
 
-function TransactionItemComponent({ transaction, onClick, showDetailedView = false }: TransactionItemProps) {
+function TransactionItemComponent({ transaction, onClick, showDetailedView = false, senderName = '' }: TransactionItemProps) {
   const isSend = transaction.type === 'send';
   const feeSplit = splitFee(transaction.fee, { network: 0.1, service: 0.9 });
 
@@ -133,6 +135,14 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
               </div>
             </div>
           )}
+
+          {/* Download Receipt Button */}
+          <div className="flex justify-end">
+            <DownloadReceiptButton
+              transaction={transaction}
+              senderName={senderName}
+            />
+          </div>
 
           {transaction.risk && transaction.risk.flags.length > 0 && (
             <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 dark:border-amber-800 dark:bg-amber-900/20">

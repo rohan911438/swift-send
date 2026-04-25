@@ -21,6 +21,8 @@ import {
 import { PickupLocation } from '@/types';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { DownloadReceiptButton } from '@/components/DownloadReceiptButton';
+import type { RemittanceReceiptInput } from '@/lib/receiptGenerator';
 
 interface RemittanceTrackerProps {
   transferId: string;
@@ -328,6 +330,19 @@ export function RemittanceTracker({
 
         {/* Action Buttons */}
         <div className="flex gap-2 pt-4">
+          <DownloadReceiptButton
+            remittanceTransfer={{
+              id: transferId,
+              recipientName,
+              amount,
+              currency,
+              confirmationCode,
+              status,
+              partnerName,
+              method,
+              country: pickupLocation?.city ?? currency,
+            }}
+          />
           <Button variant="outline" className="flex-1">
             <Phone className="w-4 h-4 mr-2" />
             Contact Support

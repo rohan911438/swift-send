@@ -9,15 +9,22 @@ import { NetworkStatusIndicator } from "@/components/NetworkStatusIndicator";
 import TransactionSigningDialog from "@/components/TransactionSigning";
 import { CompliancePreCheck } from "@/components/ComplianceCheck";
 import { TransferErrorDisplay } from "@/components/TransferErrorDisplay";
+import { CountryInfoPanel } from "@/components/CountryInfoPanel";
+import { CurrencyHint } from "@/components/CurrencyHint";
+import { CountrySummary } from "@/components/CountrySummary";
+import { ComplianceRulesList } from "@/components/ComplianceRulesList";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWallet } from "@/contexts/WalletContext";
 import { useCompliance } from "@/contexts/ComplianceContext";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
+import { useCountryInfo } from "@/hooks/useCountryInfo";
 import { createTransfer, checkTransferQueueStatus } from "@/lib/transfers";
 import { parseTransferError, TransferError } from "@/lib/errorHandling";
 import { transferLogger } from "@/lib/transferLogger";
+import { formatDeliveryEstimate } from "@/lib/countryTransferHelpers";
 import { contacts } from "@/data/mockData";
 import { Contact, TransactionPreview } from "@/types";
+import type { CashOutMethod } from "@/types/countryTransfer";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -102,6 +109,28 @@ export default function SendMoney() {
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [queueJobId, setQueueJobId] = useState<string | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Country info hook — derives countryCode from selected contact (Req 1.6)
+  const countryCode = selectedContact?.countryCode ?? null;
+  const { data: countryInfo, isLoading: countryInfoLoading, isError: countryInfoError } = useCountryInfo(countryCode);
+
+  // New-recipient state for confirm step
+  const [allRulesAcknowledged, setAllRulesAcknowledged] = useState(false);
+  const [selectedCashOutMethod, setSelectedCashOutMethod] = useState<CashOutMethod | null>(null);
+
+  // Auto-select first cash-out method when countryInfo loads
+  useEffect(() => {
+    if (countryInfo && countryInfo.cashOutMethods.length > 0) {
+      setSelectedCashOutMethod(countryInfo.cashOutMethods[0]);
+    } else {
+      setSelectedCashOutMethod(null);
+    }
+  }, [countryInfo]);
+
+  // Reset acknowledgement when countryInfo changes
+  useEffect(() => {
+    setAllRulesAcknowledged(false);
+  }, [countryInfo]);
 
   // Poll queue status until transfer completes
   useEffect(() => {
@@ -214,7 +243,7 @@ export default function SendMoney() {
     setSelectedContact(contact);
     setNewRecipient(null);
     setSubmissionError(null);
-    setStep("amount");
+    // Don't advance to "amount" yet — show CountryInfoPanel first (Req 1.1–1.5)
   }, []);
 
   const handleSelectNewRecipient = useCallback(() => {
@@ -349,9 +378,13 @@ export default function SendMoney() {
         selectedContact?.phone || newRecipient?.identifier || "";
       const recipientCountry = selectedContact?.countryCode || "US";
       const partnerCode =
-        CASH_PICKUP_PARTNER_BY_COUNTRY[recipientCountry] || "MONEYGRAM";
+        selectedCashOutMethod?.partnerName ??
+        CASH_PICKUP_PARTNER_BY_COUNTRY[recipientCountry] ??
+        "MONEYGRAM";
       const destinationCurrency =
-        DESTINATION_CURRENCY_BY_COUNTRY[recipientCountry] || "USD";
+        countryInfo?.currencyCode ??
+        DESTINATION_CURRENCY_BY_COUNTRY[recipientCountry] ??
+        "USD";
 
       const transfer = await createTransfer(
         {
@@ -390,9 +423,11 @@ export default function SendMoney() {
     },
     [
       amountValue,
+      countryInfo,
       fees.networkFee,
       fees.serviceFee,
       newRecipient,
+      selectedCashOutMethod,
       selectedContact,
       transactionSigningSecret,
       user,
@@ -461,7 +496,14 @@ export default function SendMoney() {
           <div className="bg-card rounded-xl p-4 shadow-card mb-6">
             <div className="flex items-center justify-between text-sm mb-3">
               <span className="text-muted-foreground">Estimated arrival</span>
-              <span className="font-semibold text-success">~5 seconds</span>
+              <span className="font-semibold text-success">
+                {countryInfo && selectedCashOutMethod
+                  ? formatDeliveryEstimate(
+                      selectedCashOutMethod.deliveryMinMinutes,
+                      selectedCashOutMethod.deliveryMaxMinutes
+                    )
+                  : "Delivery time unavailable"}
+              </span>
             </div>
             <div className="text-xs text-muted-foreground">
               Your money is now on the Stellar network. The recipient can access
@@ -645,6 +687,35 @@ export default function SendMoney() {
                   </div>
                 )}
               </div>
+
+              {/* Country Info Panel — shown after contact selection, before advancing (Req 1.1–1.5) */}
+              {selectedContact && (
+                <div className="space-y-4">
+                  <CountryInfoPanel
+                    countryInfo={countryInfo}
+                    isLoading={countryInfoLoading}
+                    isError={countryInfoError}
+                  />
+
+                  {/* Continue button — hidden when restricted (Req 1.4) */}
+                  {!countryInfo?.isRestricted && (
+                    <Button
+                      variant="hero"
+                      size="lg"
+                      className="w-full"
+                      onClick={() => setStep("amount")}
+                      disabled={countryInfoLoading}
+                    >
+                      {countryInfoLoading ? "Loading country info..." : (
+                        <>
+                          Continue
+                          <ArrowRight className="w-5 h-5" />
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -652,6 +723,15 @@ export default function SendMoney() {
           {step === "amount" && (selectedContact || newRecipient) && (
             <div className="space-y-6 animate-fade-in">
               <NetworkStatusIndicator network={network} compact />
+
+              {/* Country Info Panel — shown above amount input when contact selected (Req 2.1) */}
+              {selectedContact && (
+                <CountryInfoPanel
+                  countryInfo={countryInfo}
+                  isLoading={countryInfoLoading}
+                  isError={countryInfoError}
+                />
+              )}
 
               {/* Recipient Display */}
               <div className="bg-card rounded-xl p-4 shadow-card">
@@ -708,6 +788,18 @@ export default function SendMoney() {
                     USDC
                   </span>
                 </div>
+
+                {/* Currency Hint — shown inline below USDC label (Req 3.1, 3.2, 3.3) */}
+                {selectedContact && (
+                  <div className="mt-2">
+                    <CurrencyHint
+                      currencyCode={countryInfo?.currencyCode ?? null}
+                      exchangeRate={countryInfo?.exchangeRate ?? null}
+                      amount={amountValue}
+                      totalFee={fees.totalFee}
+                    />
+                  </div>
+                )}
 
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 text-sm">
                   <p className="text-muted-foreground">
@@ -992,6 +1084,36 @@ export default function SendMoney() {
                 recipientGets={fees.recipientGets}
               />
 
+              {/* Country Summary — shown when countryInfo and selectedCashOutMethod are available (Req 5.1) */}
+              {countryInfo && selectedCashOutMethod && (
+                <CountrySummary
+                  countryInfo={countryInfo}
+                  selectedMethod={selectedCashOutMethod}
+                  amount={amountValue}
+                  totalFee={fees.totalFee}
+                />
+              )}
+
+              {/* Compliance Rules — shown when rules exist (Req 5.2, 5.3) */}
+              {countryInfo && countryInfo.complianceRules.length > 0 && (
+                <div className="bg-card rounded-xl p-5 shadow-card border border-border/50 space-y-3">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Transfer Requirements
+                  </h3>
+                  <ComplianceRulesList
+                    rules={countryInfo.complianceRules}
+                    onAllAcknowledged={setAllRulesAcknowledged}
+                  />
+                </div>
+              )}
+
+              {/* Acknowledgement required message (Req 5.4) */}
+              {countryInfo && countryInfo.complianceRules.length > 0 && !allRulesAcknowledged && (
+                <p className="text-sm text-amber-600 dark:text-amber-400 text-center">
+                  Please acknowledge all transfer requirements to continue
+                </p>
+              )}
+
               {submissionError && (
                 <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                   {submissionError}
@@ -1118,7 +1240,10 @@ export default function SendMoney() {
                   className="w-full"
                   onClick={handleConfirmSend}
                   disabled={
-                    isProcessing || Boolean(amountError) || isNetworkOffline
+                    isProcessing ||
+                    Boolean(amountError) ||
+                    isNetworkOffline ||
+                    (Boolean(countryInfo?.complianceRules.length) && !allRulesAcknowledged)
                   }
                 >
                   {isProcessing ? (
