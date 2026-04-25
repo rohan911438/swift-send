@@ -28,22 +28,63 @@ interface TransferRequest {
 export default async function transferRoutes(fastify: FastifyInstance) {
   fastify.post('/transfers', { preHandler: [requireVerifiedSession, requireAccessGuard] }, async (req, reply) => {
     const body = req.body as TransferRequest;
+    const session = req.user as JwtSessionPayload;
+    
     try {
+      // Check idempotency - prevent duplicate execution
+      const existingRecord = fastify.container.services.idempotency.checkIdempotency(
+        body.idempotency_key,
+        session.sub
+      );
+
+      if (existingRecord) {
+        if (existingRecord.status === 'processing') {
+          return reply.status(409).send({
+            error: 'Request is still being processed',
+            idempotency_key: body.idempotency_key,
+            status: 'processing',
+          });
+        }
+
+        if (existingRecord.status === 'completed' && existingRecord.response) {
+          return reply.status(200).send(existingRecord.response);
+        }
+
+        if (existingRecord.status === 'failed' && existingRecord.response) {
+          return reply.status(400).send(existingRecord.response);
+        }
+      }
+
+      // Create idempotency record
+      fastify.container.services.idempotency.createRecord(body.idempotency_key, session.sub);
+
       const payload = requestPayloadForSigning(body);
-      const session = requireTransferSession(req.user as JwtSessionPayload);
-      verifySenderAuthenticity(body, session);
-      verifySignedTransferPayload(payload, body.signature, session.transactionSigningSecret);
+      const transferSession = requireTransferSession(session);
+      verifySenderAuthenticity(body, transferSession);
+      verifySignedTransferPayload(payload, body.signature, transferSession.transactionSigningSecret);
 
       const command = mapRequestToCommand(body);
       fastify.container.services.transfers.validateCommand(command);
 
       const jobId = fastify.container.services.transferQueue.enqueue(command);
-      return reply.status(202).send({
+      const response = {
         queue_job_id: jobId,
         transfer_initiated: true,
         status_url: `/transfers/${jobId}/status`,
-      });
+        idempotency_key: body.idempotency_key,
+      };
+
+      // Mark idempotency as completed
+      fastify.container.services.idempotency.completeRecord(body.idempotency_key, response);
+
+      return reply.status(202).send(response);
     } catch (err: unknown) {
+      // Mark idempotency as failed
+      if (body.idempotency_key) {
+        const errorMessage = err instanceof Error ? err.message : 'transfer creation failed';
+        fastify.container.services.idempotency.failRecord(body.idempotency_key, errorMessage);
+      }
+
       const statusCode = err instanceof ValidationError ? err.statusCode : 400;
       const errorMessage = err instanceof Error ? err.message : 'transfer creation failed';
       const details = err instanceof ValidationError ? err.details : undefined;
