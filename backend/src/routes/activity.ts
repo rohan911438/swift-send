@@ -1,10 +1,23 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { getSession } from '../auth/sessionStore';
-import type { JwtSessionPayload, Session } from '../auth/sessionTypes';
+import type { JwtSessionPayload, PublicUser, Session } from '../auth/sessionTypes';
+
+type VerifiedSession = Session & { user: PublicUser };
 import { requireVerifiedSession } from '../middleware/authenticate';
 
 interface ActivityQuery {
   limit?: string;
+}
+
+interface SearchQuery {
+  q?: string;
+  status?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  amountMin?: string;
+  amountMax?: string;
+  limit?: string;
+  offset?: string;
 }
 
 export default async function activityRoutes(fastify: FastifyInstance) {
@@ -19,6 +32,37 @@ export default async function activityRoutes(fastify: FastifyInstance) {
       return {
         items: await fastify.container.services.activity.listTransactions(session.user!.id, limit),
       };
+    },
+  );
+
+  fastify.get<{ Querystring: SearchQuery }>(
+    '/activity/transactions/search',
+    { preHandler: [requireVerifiedSession] },
+    async (req, reply) => {
+      const session = requireSessionUser(req.user as JwtSessionPayload, reply);
+      if (!session) return;
+
+      const q = req.query ?? {};
+      const status = ['pending', 'completed', 'failed'].includes(q.status ?? '')
+        ? (q.status as 'pending' | 'completed' | 'failed')
+        : undefined;
+
+      const result = await fastify.container.services.activity.searchTransactions(
+        session.user!.id,
+        {
+          q: q.q,
+          status,
+          dateFrom: q.dateFrom,
+          dateTo: q.dateTo,
+          amountMin: q.amountMin !== undefined ? parseFloat(q.amountMin) : undefined,
+          amountMax: q.amountMax !== undefined ? parseFloat(q.amountMax) : undefined,
+          limit: sanitizeLimit(q.limit, 50, 100),
+          offset: q.offset !== undefined ? Math.max(0, parseInt(q.offset, 10) || 0) : 0,
+        },
+      );
+
+      reply.header('Cache-Control', 'no-store');
+      return result;
     },
   );
 
@@ -65,7 +109,7 @@ export default async function activityRoutes(fastify: FastifyInstance) {
   );
 }
 
-function requireSessionUser(token: JwtSessionPayload, reply: FastifyReply): Session | null {
+function requireSessionUser(token: JwtSessionPayload, reply: FastifyReply): VerifiedSession | null {
   const session = getSession(token.sub);
   if (!session) {
     reply.code(401).send({ error: 'Session expired' });
@@ -75,7 +119,7 @@ function requireSessionUser(token: JwtSessionPayload, reply: FastifyReply): Sess
     reply.code(400).send({ error: 'Onboarding incomplete' });
     return null;
   }
-  return session;
+  return session as VerifiedSession;
 }
 
 function sanitizeLimit(value: string | undefined, fallback: number, maximum: number) {

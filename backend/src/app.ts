@@ -7,7 +7,7 @@ import transferRoutes from './routes/transfers';
 import escrowRoutes from './routes/escrow';
 import authRoutes from './routes/auth';
 import activityRoutes from './routes/activity';
-import countriesRoutes from './routes/countries';
+import adminRoutes from './routes/admin';
 import { config } from './config';
 import { logger } from './logger';
 import { createContainer } from './container';
@@ -48,7 +48,7 @@ export async function buildApp() {
   await app.register(activityRoutes, { prefix });
   await app.register(transferRoutes, { prefix });
   await app.register(escrowRoutes, { prefix });
-  await app.register(countriesRoutes, { prefix });
+  await app.register(adminRoutes, { prefix });
 
   app.addHook('onClose', async () => {
     logger.info('Server shutting down');

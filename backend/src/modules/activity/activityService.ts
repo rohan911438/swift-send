@@ -26,6 +26,17 @@ export interface ActivityTransactionDto {
   };
 }
 
+export interface TransactionSearchParams {
+  q?: string;
+  status?: 'pending' | 'completed' | 'failed';
+  dateFrom?: string;
+  dateTo?: string;
+  amountMin?: number;
+  amountMax?: number;
+  limit?: number;
+  offset?: number;
+}
+
 export interface SpendingInsightsDto {
   summary: {
     totalSent: number;
@@ -212,6 +223,53 @@ export class ActivityService {
     });
 
     return insights;
+  }
+
+  async searchTransactions(
+    userId: string,
+    params: TransactionSearchParams,
+  ): Promise<{ items: ActivityTransactionDto[]; total: number }> {
+    const all = await this.repository.listByUserId(userId);
+    let results = all.map((r) => this.toTransactionDto(r));
+
+    const q = params.q?.trim().toLowerCase();
+    if (q) {
+      results = results.filter(
+        (t) =>
+          t.recipientName.toLowerCase().includes(q) ||
+          t.recipientPhone.toLowerCase().includes(q) ||
+          t.id.toLowerCase().includes(q),
+      );
+    }
+
+    if (params.status) {
+      results = results.filter((t) => t.status === params.status);
+    }
+
+    if (params.dateFrom) {
+      const from = new Date(params.dateFrom).getTime();
+      results = results.filter((t) => new Date(t.timestamp).getTime() >= from);
+    }
+
+    if (params.dateTo) {
+      const to = new Date(params.dateTo).getTime();
+      results = results.filter((t) => new Date(t.timestamp).getTime() <= to);
+    }
+
+    if (params.amountMin !== undefined) {
+      results = results.filter((t) => t.amount >= params.amountMin!);
+    }
+
+    if (params.amountMax !== undefined) {
+      results = results.filter((t) => t.amount <= params.amountMax!);
+    }
+
+    const total = results.length;
+    const offset = Math.max(0, params.offset ?? 0);
+    const limit = Math.min(100, Math.max(1, params.limit ?? 50));
+    const items = results.slice(offset, offset + limit);
+
+    return { items, total };
   }
 
   listNotifications(userId: string, limit = 5) {

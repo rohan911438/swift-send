@@ -6,6 +6,7 @@ import { CountryMetadataService } from './modules/countries/countryMetadataServi
 import { FraudService } from './modules/fraud/fraudService';
 import { createDemoNotifications } from './modules/notifications/demoNotifications';
 import { NotificationService } from './modules/notifications/notificationService';
+import { AccessGuardService } from './modules/rbac/accessGuardService';
 import { SystemHealthService } from './modules/system/systemHealthService';
 import { createDemoTransfers } from './modules/transfers/demoTransfers';
 import { InMemoryTransferRepository } from './modules/transfers/inMemoryTransferRepository';
@@ -27,7 +28,7 @@ export interface AppContainer {
     activity: ActivityService;
     health: SystemHealthService;
     contracts: ContractService;
-    countryMetadata: CountryMetadataService;
+    accessGuard: AccessGuardService;
   };
 }
 
@@ -44,6 +45,7 @@ export function createContainer(): AppContainer {
   const transfers = new TransferLifecycle(transferRepository, wallets, compliance, fraud, eventBus);
   const transferQueue = new TransferQueue(transfers, eventBus);
   const health = new SystemHealthService(compliance, wallets);
+  const accessGuard = new AccessGuardService();
 
   eventBus.subscribe<{ userId: string }>('transfer.created', (event) => {
     activity.invalidateUser(event.payload.userId);
@@ -86,7 +88,7 @@ export function createContainer(): AppContainer {
       activity,
       health,
       contracts,
-      countryMetadata,
+      accessGuard,
     },
   };
 }

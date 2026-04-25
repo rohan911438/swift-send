@@ -79,6 +79,7 @@ export function createMariaSession(): Session {
     hasWallet: true,
     onboardingCompleted: true,
     transactionSigningSecret: createTransactionSigningSecret(),
+    role: 'admin',
     user,
   };
   saveSession(session);

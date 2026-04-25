@@ -13,26 +13,16 @@ import { NotificationFeed } from '@/components/NotificationFeed';
 import { SpendingInsightsCard } from '@/components/SpendingInsightsCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
-import { fetchNotifications, fetchSpendingInsights, fetchTransactions } from '@/lib/activity';
+import { transactions } from '@/data/mockData';
+import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { Send, Plus, Bell, ArrowRight, Shield, Info, Zap, Clock, TrendingDown, Star, CheckCircle2, Globe2, Award, Wallet, ExternalLink, MapPin } from 'lucide-react';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { connectionState } = useWallet();
-  const [showWalletDialog, setShowWalletDialog] = useState(false);
-  const transactionsQuery = useQuery({
-    queryKey: ['activity', 'transactions', 3],
-    queryFn: () => fetchTransactions(3),
-  });
-  const notificationsQuery = useQuery({
-    queryKey: ['notifications', 4],
-    queryFn: () => fetchNotifications(4),
-  });
-  const insightsQuery = useQuery({
-    queryKey: ['activity', 'insights'],
-    queryFn: fetchSpendingInsights,
-  });
+  const { rates } = useExchangeRate();
+  const currentExchangeRate = rates[user?.localCurrency || 'USD'] || 1.0;
 
   const recentTransactions = transactionsQuery.data || [];
   const unreadNotifications = notificationsQuery.data?.unreadCount || 0;
@@ -119,7 +109,7 @@ export default function Dashboard() {
           <BalanceCard 
             usdcBalance={user?.usdcBalance || 0}
             localCurrency={user?.localCurrency || 'USD'}
-            exchangeRate={user?.exchangeRate || 1.0}
+            exchangeRate={currentExchangeRate}
           />
 
           {/* Compliance Dashboard - Compact View */}
