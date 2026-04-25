@@ -1,6 +1,7 @@
 import { config, AppConfig } from './config';
 import { EventBus } from './core/eventBus';
 import { ActivityService } from './modules/activity/activityService';
+import { ExportService } from './modules/activity/exportService';
 import { ComplianceService } from './modules/compliance/complianceService';
 import { CountryMetadataService } from './modules/countries/countryMetadataService';
 import { FraudService } from './modules/fraud/fraudService';
@@ -14,6 +15,9 @@ import { TransferQueue } from './modules/transfers/transferQueue';
 import { TransferLifecycle } from './modules/transfers/transferLifecycle';
 import { WalletService } from './modules/wallets/walletService';
 import { ContractService } from './services/contractService';
+import { RecurringPaymentService } from './modules/recurring-payments/recurringPaymentService';
+import { RecurringPaymentWorker } from './modules/recurring-payments/recurringPaymentWorker';
+import { InMemoryRecurringPaymentRepository } from './modules/recurring-payments/inMemoryRecurringPaymentRepository';
 
 export interface AppContainer {
   config: AppConfig;
@@ -29,6 +33,7 @@ export interface AppContainer {
     health: SystemHealthService;
     contracts: ContractService;
     accessGuard: AccessGuardService;
+    recurringPayments: RecurringPaymentService;
   };
 }
 
@@ -41,11 +46,17 @@ export function createContainer(): AppContainer {
   const countryMetadata = new CountryMetadataService();
   const transferRepository = new InMemoryTransferRepository(createDemoTransfers());
   const notifications = new NotificationService(eventBus, createDemoNotifications());
-  const activity = new ActivityService(transferRepository, notifications);
+  const exporter = new ExportService();
+  const activity = new ActivityService(transferRepository, notifications, exporter);
   const transfers = new TransferLifecycle(transferRepository, wallets, compliance, fraud, eventBus);
   const transferQueue = new TransferQueue(transfers, eventBus);
   const health = new SystemHealthService(compliance, wallets);
   const accessGuard = new AccessGuardService();
+  const recurringPaymentRepository = new InMemoryRecurringPaymentRepository();
+  const recurringPayments = new RecurringPaymentService(recurringPaymentRepository, contracts);
+  const recurringWorker = new RecurringPaymentWorker(recurringPayments);
+
+  recurringWorker.start();
 
   eventBus.subscribe<{ userId: string }>('transfer.created', (event) => {
     activity.invalidateUser(event.payload.userId);
@@ -89,6 +100,7 @@ export function createContainer(): AppContainer {
       health,
       contracts,
       accessGuard,
+      recurringPayments,
     },
   };
 }

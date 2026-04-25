@@ -28,3 +28,15 @@ export class NotFoundError extends AppError {
     super(message, 'not_found', 404);
   }
 }
+
+export class AuthenticationError extends AppError {
+  constructor(message = 'Authentication required') {
+    super(message, 'authentication_error', 401);
+  }
+}
+
+export class ForbiddenError extends AppError {
+  constructor(message = 'Permission denied') {
+    super(message, 'forbidden_error', 403);
+  }
+}

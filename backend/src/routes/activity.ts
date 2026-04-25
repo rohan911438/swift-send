@@ -67,6 +67,23 @@ export default async function activityRoutes(fastify: FastifyInstance) {
   );
 
   fastify.get(
+    '/activity/export',
+    { preHandler: [requireVerifiedSession] },
+    async (req, reply) => {
+      const session = requireSessionUser(req.user as JwtSessionPayload, reply);
+      if (!session) return;
+
+      const buffer = await fastify.container.services.activity.exportTransactionsToExcel(session.user!.id);
+
+      reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      reply.header('Content-Disposition', 'attachment; filename=SwiftSend_Transactions.xlsx');
+      reply.header('Content-Length', buffer.length.toString());
+      
+      return reply.send(buffer);
+    },
+  );
+
+  fastify.get(
     '/activity/spending-insights',
     { preHandler: [requireVerifiedSession] },
     async (req, reply) => {

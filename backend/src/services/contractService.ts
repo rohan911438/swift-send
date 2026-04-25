@@ -6,6 +6,7 @@ export class ContractService {
   public readonly remittanceEscrow?: string;
   public readonly walletRegistry?: string;
   public readonly complianceLimits?: string;
+  public readonly recurringPayments?: string;
 
   constructor() {
     this.simpleCounter = config.contracts.simpleCounter;
@@ -13,6 +14,7 @@ export class ContractService {
     this.remittanceEscrow = config.contracts.remittanceEscrow;
     this.walletRegistry = config.contracts.walletRegistry;
     this.complianceLimits = config.contracts.complianceLimits;
+    this.recurringPayments = config.contracts.recurringPayments;
   }
 
   async invoke(contractId: string, method: string, args?: any[]): Promise<any> {

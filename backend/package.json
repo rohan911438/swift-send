@@ -16,6 +16,7 @@
     "@fastify/jwt": "^8.0.1",
     "@stellar/stellar-sdk": "^14.4.3",
     "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
     "fastify": "^4.22.0",
     "pino": "^9.1.0",
     "uuid": "^9.0.0"

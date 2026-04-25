@@ -2,6 +2,7 @@ import { config } from '../../config';
 import type { NotificationService } from '../notifications/notificationService';
 import type { TransferRecord } from '../transfers/domain';
 import type { TransferRepository } from '../transfers/repository';
+import { ExportService } from './exportService';
 
 export interface ActivityTransactionDto {
   id: string;
@@ -84,6 +85,7 @@ export class ActivityService {
   constructor(
     private readonly repository: TransferRepository,
     private readonly notifications: NotificationService,
+    private readonly exporter: ExportService,
   ) {}
 
   async listTransactions(userId: string, limit = 50): Promise<ActivityTransactionDto[]> {
@@ -100,6 +102,12 @@ export class ActivityService {
       value: transactions,
     });
     return transactions;
+  }
+
+  async exportTransactionsToExcel(userId: string): Promise<Buffer> {
+    const records = await this.repository.listByUserId(userId);
+    const transactions = records.map((record) => this.toTransactionDto(record));
+    return this.exporter.generateTransactionExcel(transactions);
   }
 
   async getSpendingInsights(userId: string): Promise<SpendingInsightsDto> {

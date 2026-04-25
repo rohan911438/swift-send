@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { BottomNav } from '@/components/BottomNav';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import WalletConnectionDialog, { WalletStatusIndicator } from '@/components/WalletConnection';
 import { ComplianceDashboard } from '@/components/ComplianceDashboard';
 import { useAuth } from '@/contexts/AuthContext';
@@ -186,14 +187,8 @@ export default function Profile() {
             <h2 className="font-semibold text-foreground mb-4">Account Details</h2>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">Theme</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-                >
-                  {resolvedTheme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
-                </Button>
+                <p className="text-sm text-muted-foreground">Appearance</p>
+                <ThemeToggle />
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">

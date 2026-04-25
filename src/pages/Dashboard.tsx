@@ -11,6 +11,7 @@ import { WalletTransactionHistory } from '@/components/TransactionSigning';
 import { ComplianceDashboard } from '@/components/ComplianceDashboard';
 import { NotificationFeed } from '@/components/NotificationFeed';
 import { SpendingInsightsCard } from '@/components/SpendingInsightsCard';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
 import { transactions } from '@/data/mockData';
@@ -57,17 +58,20 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-          <button
-            className="relative p-3 rounded-xl bg-card shadow-card hover:bg-secondary transition-colors"
-            onClick={() => navigate('/history')}
-          >
-            <Bell className="w-5 h-5 text-foreground" />
-            {unreadNotifications > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-destructive text-[10px] font-semibold text-destructive-foreground flex items-center justify-center">
-                {unreadNotifications}
-              </span>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <button
+              className="relative p-3 rounded-xl bg-card shadow-card hover:bg-secondary transition-colors"
+              onClick={() => navigate('/history')}
+            >
+              <Bell className="w-5 h-5 text-foreground" />
+              {unreadNotifications > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-destructive text-[10px] font-semibold text-destructive-foreground flex items-center justify-center">
+                  {unreadNotifications}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </header>
 

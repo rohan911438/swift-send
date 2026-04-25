@@ -4,7 +4,8 @@ members = [
     "wallet-registry",
     "compliance-limits",
     "simple-counter",
-    "access-guard"
+    "access-guard",
+    "recurring-payments"
 ]
 resolver = "2"
 

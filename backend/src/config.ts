@@ -31,6 +31,7 @@ export interface AppConfig {
     remittanceEscrow?: string;
     walletRegistry?: string;
     complianceLimits?: string;
+    recurringPayments?: string;
   };
   persistence: {
     databaseUrl: string;
@@ -117,6 +118,7 @@ export const config: AppConfig = {
     remittanceEscrow: process.env.CONTRACT_REMITTANCE_ESCROW,
     walletRegistry: process.env.CONTRACT_WALLET_REGISTRY,
     complianceLimits: process.env.CONTRACT_COMPLIANCE_LIMITS,
+    recurringPayments: process.env.CONTRACT_RECURRING_PAYMENTS,
   },
   auth: {
     jwtSecret: process.env.JWT_SECRET || 'dev-only-change-me-in-production',

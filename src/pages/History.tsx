@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useMemo } from 'react';
-import { ChevronDown, Search, Filter, Calendar, Banknote, TrendingUp, Clock, ArrowLeft } from 'lucide-react';
+import { ChevronDown, Search, Filter, Calendar, Banknote, TrendingUp, Clock, ArrowLeft, FileDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TransactionItem } from '@/components/TransactionItem';
 import { Badge } from '@/components/ui/badge';
@@ -124,6 +124,13 @@ const History: React.FC = () => {
     setDateFilter('all');
     setAmountFilter('all');
     setSortOrder('latest');
+  }, []);
+
+  const handleExport = useCallback(() => {
+    // Direct link to the export endpoint. 
+    // The browser will handle the download and include the auth cookie.
+    const exportUrl = `${window.location.origin}/activity/export`;
+    window.location.href = exportUrl;
   }, []);
 
   const statusOptions = [
@@ -453,6 +460,15 @@ const History: React.FC = () => {
                   Clear all
                 </Button>
               )}
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleExport}
+                className="text-xs flex items-center gap-2 border-primary/30 text-primary hover:bg-primary/5"
+              >
+                <FileDown className="w-3.5 h-3.5" />
+                Export to Excel
+              </Button>
             </div>
 
             {filteredTransactions.map((transaction, index) => (

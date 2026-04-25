@@ -164,6 +164,40 @@ export function parseTransferError(error: unknown): TransferError {
   if (typeof error === "object" && error !== null) {
     const errorObj = error as Record<string, unknown>;
 
+    // Handle structured backend errors
+    if (errorObj.code) {
+      const code = String(errorObj.code);
+      if (code === 'validation_error') {
+        return {
+          category: 'validation_error',
+          message: String(errorObj.error),
+          userMessage: "Some information you provided is incorrect. Please check the form and try again.",
+          details: errorObj.details as any,
+          recoveryActions: ["Verify recipient details", "Check for typos", "Ensure amount is valid"],
+          retryable: false,
+        };
+      }
+      if (code === 'authentication_error') {
+        return {
+          category: 'authentication_error',
+          message: String(errorObj.error),
+          userMessage: "Your session has expired. Please sign in again.",
+          recoveryActions: ["Sign in again"],
+          retryable: false,
+        };
+      }
+      if (code === 'compliance_error') {
+        return {
+          category: 'compliance_error',
+          message: String(errorObj.error),
+          userMessage: "This transfer exceeds your account's current limits.",
+          details: errorObj.details as any,
+          recoveryActions: ["Reduce transfer amount", "Verify your identity for higher limits"],
+          retryable: false,
+        };
+      }
+    }
+
     if (errorObj.error) {
       return parseTransferError(new Error(String(errorObj.error)));
     }
@@ -227,24 +261,6 @@ export function parseTransferError(error: unknown): TransferError {
           }
         }
       }
-
-      // Check for compliance/limit errors in details
-      if (details.blockers && Array.isArray(details.blockers)) {
-        const blockers = details.blockers as string[];
-        return {
-          category: "compliance_error",
-          message: blockers.join("; "),
-          userMessage: `Transfer blocked: ${blockers.join("; ")}`,
-          details,
-          recoveryActions: [
-            "Reduce the transfer amount",
-            "Upgrade your account",
-            "Contact support",
-          ],
-          retryable: false,
-          statusCode: 400,
-        };
-      }
     }
   }
 
@@ -252,8 +268,8 @@ export function parseTransferError(error: unknown): TransferError {
   return {
     category: "unknown_error",
     message: String(error),
-    userMessage: "An unexpected error occurred. Please try again.",
-    recoveryActions: ["Try again", "Contact support if issue persists"],
+    userMessage: "We're having trouble processing your request. Please try again in a moment.",
+    recoveryActions: ["Try again", "Check your connection", "Contact support if issue persists"],
     retryable: true,
   };
 }
