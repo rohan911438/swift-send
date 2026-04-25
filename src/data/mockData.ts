@@ -105,6 +105,19 @@ export const transactions: Transaction[] = [
     status: "completed",
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
   },
+  {
+    id: '5',
+    type: 'send',
+    amount: 75,
+    fee: 0.2,
+    recipientAmount: 74.8,
+    recipientName: 'Ana Lopez',
+    recipientPhone: '+503 7890 1234',
+    status: 'failed',
+    timestamp: new Date(Date.now() - 1000 * 60 * 45), // 45 mins ago
+    exchangeRate: 8.75,
+    destinationCurrency: 'SVC',
+  },
 ];
 
 // Funding Methods (Cash In)

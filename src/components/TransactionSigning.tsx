@@ -20,6 +20,7 @@ import {
 import { TransactionPreview, WalletTransaction } from '@/types';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { StatusBadge } from './StatusBadge';
 
 interface TransactionSigningDialogProps {
   isOpen: boolean;
@@ -27,6 +28,13 @@ interface TransactionSigningDialogProps {
   transaction: TransactionPreview;
   onSuccess: (txHash: string) => void;
   onError: (error: string) => void;
+}
+
+function mapWalletStatusToUiStatus(status: WalletTransaction['status']) {
+  if (status === 'success') return 'completed' as const;
+  if (status === 'submitted') return 'processing' as const;
+  if (status === 'pending') return 'pending' as const;
+  return 'failed' as const;
 }
 
 export default function TransactionSigningDialog({
@@ -51,12 +59,20 @@ export default function TransactionSigningDialog({
   }, [isOpen]);
 
   const handleSign = async () => {
+    if (isSigningTransaction || step === 'signing') {
+      return;
+    }
+
     if (!connectionState.isConnected) {
+      toast.error('No wallet connected');
       onError('No wallet connected');
       return;
     }
 
     setStep('signing');
+    const toastId = toast.loading('Waiting for wallet approval...', {
+      description: `Please confirm in your ${connectionState.provider} wallet.`,
+    });
     
     try {
       const hash = await signTransaction({
@@ -68,11 +84,20 @@ export default function TransactionSigningDialog({
       
       setTxHash(hash);
       setStep('success');
+      toast.success('Transaction signed!', {
+        id: toastId,
+        description: `Hash: ${hash.slice(0, 8)}...${hash.slice(-6)}`,
+      });
       onSuccess(hash);
     } catch (err: any) {
-      setError(err.message || 'Transaction signing failed');
+      const message = err.message || 'Transaction signing failed';
+      setError(message);
       setStep('error');
-      onError(err.message || 'Transaction signing failed');
+      toast.error('Transaction failed', {
+        id: toastId,
+        description: message,
+      });
+      onError(message);
     }
   };
 
@@ -171,7 +196,7 @@ export default function TransactionSigningDialog({
         <Button variant="outline" onClick={onClose} className="flex-1">
           Cancel
         </Button>
-        <Button onClick={handleSign} className="flex-1">
+        <Button onClick={handleSign} className="flex-1" disabled={isSigningTransaction || step === 'signing'}>
           Sign Transaction
           <ArrowUpRight className="w-4 h-4" />
         </Button>
@@ -364,12 +389,7 @@ export function WalletTransactionHistory() {
             <div key={tx.id} className="p-3 border rounded-lg">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <Badge 
-                    variant={tx.status === 'success' ? 'default' : tx.status === 'pending' ? 'secondary' : 'destructive'}
-                    className="text-xs"
-                  >
-                    {tx.status}
-                  </Badge>
+                  <StatusBadge status={mapWalletStatusToUiStatus(tx.status)} />
                   <span className="text-sm font-medium">
                     {tx.amount} {tx.asset}
                   </span>

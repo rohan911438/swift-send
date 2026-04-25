@@ -16,7 +16,7 @@ import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { createTransfer, checkTransferQueueStatus } from "@/lib/transfers";
 import { parseTransferError, TransferError } from "@/lib/errorHandling";
 import { transferLogger } from "@/lib/transferLogger";
-import { contacts, calculateFees } from "@/data/mockData";
+import { contacts } from "@/data/mockData";
 import { Contact, TransactionPreview } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -65,6 +65,20 @@ const DESTINATION_CURRENCY_BY_COUNTRY: Record<string, string> = {
   GT: "GTQ",
   SV: "USD",
   US: "USD",
+};
+
+const calculateFees = (amount: number) => {
+  const networkFee = 0.0001;
+  const serviceFee = amount * 0.005;
+  const totalFee = networkFee + serviceFee;
+  const recipientGets = Math.max(0, amount - totalFee);
+
+  return {
+    networkFee,
+    serviceFee,
+    totalFee,
+    recipientGets,
+  };
 };
 
 export default function SendMoney() {
@@ -231,6 +245,10 @@ export default function SendMoney() {
   }, [amountError]);
 
   const handleConfirmSend = async () => {
+    if (isProcessing || showWalletSigning) {
+      return;
+    }
+
     if (isNetworkOffline) {
       setSubmissionError(networkBlockingMessage);
       toast.error(networkBlockingMessage);

@@ -172,7 +172,7 @@ export function calculateTransferFeesWithExchange(
 
   return {
     amount: roundToTwoDecimals(amountInUSDC),
-    networkFee: roundToTwoDecimals(networkFee),
+    networkFee: networkFee,
     serviceFee: roundToTwoDecimals(serviceFee),
     exchangeFee: roundToTwoDecimals(exchangeFee),
     totalFee,

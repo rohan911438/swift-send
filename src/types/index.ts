@@ -40,6 +40,8 @@ export interface Contact {
   countryCode: string;
 }
 
+export type TransactionStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
 export interface Transaction {
   id: string;
   type: 'send' | 'receive';
@@ -48,7 +50,7 @@ export interface Transaction {
   recipientAmount: number;
   recipientName: string;
   recipientPhone: string;
-  status: 'pending' | 'completed' | 'failed';
+  status: TransactionStatus;
   timestamp: Date;
   exchangeRate?: number;
   destinationCurrency?: string;
