@@ -78,3 +78,23 @@ export interface NotificationsResponse {
   items: UserNotification[];
   unreadCount: number;
 }
+export type RefundStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export interface RefundRecord {
+  id: string;
+  transferId: string;
+  userId: string;
+  amount: number;
+  currency: string;
+  reason: string;
+  status: RefundStatus;
+  initiatedAt: Date;
+  completedAt?: Date;
+  recipientName?: string;
+}
+
+export interface RefundsResponse {
+  items: RefundRecord[];
+  total: number;
+}
+
