@@ -1,48 +1,88 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
-import { Zap, ArrowLeft, Wallet, Shield, Lock, CheckCircle2, Sparkles } from 'lucide-react';
+import { Zap, ArrowLeft, Wallet, Shield, Lock, CheckCircle2, Sparkles, AlertTriangle, Loader2 } from 'lucide-react';
+
+// #94: explicit step ladder so the in-progress screen renders a tracker
+// instead of a static blob. Each phase has a label the user can read off
+// and a stable id we can target with `data-testid` in tests.
+type WalletCreationStep = {
+  id: 'keys' | 'network' | 'finalize';
+  label: string;
+};
+
+const WALLET_CREATION_STEPS: WalletCreationStep[] = [
+  { id: 'keys', label: 'Generating secure encryption keys' },
+  { id: 'network', label: 'Connecting to the global payment network' },
+  { id: 'finalize', label: 'Finalizing your personal account' },
+];
+
+type Phase = 'idle' | 'creating' | 'success' | 'failed';
 
 export default function OnboardingWallet() {
-  const [isCreating, setIsCreating] = useState(false);
-  const [walletCreated, setWalletCreated] = useState(false);
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [activeStepIdx, setActiveStepIdx] = useState(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const { setOnboardingStep, completeOnboarding, authUser } = useAuth();
 
-  const handleCreateWallet = async () => {
-    setIsCreating(true);
-    
-    // Simulate wallet creation process
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    setWalletCreated(true);
-    setIsCreating(false);
-    
-    // Auto-complete onboarding after showing success
-    setTimeout(async () => {
-      // Get stored profile data
+  // Allow the test suite to inject a deterministic delay; default keeps
+  // the live UX feel.
+  const stepDelayMs =
+    typeof window !== 'undefined' &&
+    (window as unknown as { __ONBOARDING_WALLET_STEP_MS__?: number })
+      .__ONBOARDING_WALLET_STEP_MS__ !== undefined
+      ? (window as unknown as { __ONBOARDING_WALLET_STEP_MS__?: number })
+          .__ONBOARDING_WALLET_STEP_MS__!
+      : 800;
+
+  const handleCreateWallet = useCallback(async () => {
+    setPhase('creating');
+    setErrorMessage(null);
+    setActiveStepIdx(0);
+    setAttempt((a) => a + 1);
+
+    try {
+      // Drive the visible progress ladder one step at a time so the user
+      // sees something happening instead of a single 3s spinner.
+      for (let i = 0; i < WALLET_CREATION_STEPS.length; i += 1) {
+        setActiveStepIdx(i);
+        await new Promise((resolve) => setTimeout(resolve, stepDelayMs));
+      }
+
       const storedProfile = localStorage.getItem('onboarding-profile');
       const profileData = storedProfile ? JSON.parse(storedProfile) : {};
-      
+
       await completeOnboarding({
         name: profileData.name || 'User',
         email: authUser?.email || profileData.email,
-        phone: authUser?.phone || profileData.phone
+        phone: authUser?.phone || profileData.phone,
       });
-      
-      // Clean up stored data
-      localStorage.removeItem('onboarding-profile');
-    }, 2000);
-  };
 
-  if (walletCreated) {
+      localStorage.removeItem('onboarding-profile');
+      setPhase('success');
+    } catch (err) {
+      // #94: present a recoverable failure surface — no thrown rejection
+      // bubbles up to a blank screen, retry button is wired so the user
+      // can recover without restarting onboarding.
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Something went wrong setting up your wallet.';
+      setErrorMessage(message);
+      setPhase('failed');
+    }
+  }, [authUser?.email, authUser?.phone, completeOnboarding, stepDelayMs]);
+
+  if (phase === 'success') {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <div className="flex-1 flex items-center justify-center px-6">
-          <div className="max-w-lg mx-auto text-center">
+          <div className="max-w-lg mx-auto text-center" data-testid="onboarding-wallet-success">
             <div className="w-20 h-20 mx-auto rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center mb-6">
               <CheckCircle2 className="w-10 h-10 text-green-600" />
             </div>
-            
+
             <h1 className="text-3xl font-bold text-foreground mb-3">
               Your wallet is ready! 🎉
             </h1>
@@ -59,37 +99,132 @@ export default function OnboardingWallet() {
     );
   }
 
-  if (isCreating) {
+  if (phase === 'creating') {
+    const completedSteps = activeStepIdx;
+    const totalSteps = WALLET_CREATION_STEPS.length;
+    const percent = Math.min(
+      100,
+      Math.round(((completedSteps + 1) / totalSteps) * 100),
+    );
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <div className="flex-1 flex items-center justify-center px-6">
-          <div className="max-w-lg mx-auto text-center">
+          <div
+            className="max-w-lg mx-auto text-center w-full"
+            data-testid="onboarding-wallet-creating"
+            aria-live="polite"
+          >
             <div className="w-20 h-20 mx-auto rounded-full bg-primary/10 flex items-center justify-center mb-6">
-              <Sparkles className="w-10 h-10 text-primary" />
-            </div>
-            
-            <h1 className="text-2xl font-bold text-foreground mb-3">
-              Creating your personal wallet...
-            </h1>
-            
-            <div className="space-y-2 mb-6">
-              <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                <div className="animate-pulse">🔐</div>
-                <span>Generating secure encryption keys</span>
-              </div>
-              <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                <div className="animate-pulse">🌐</div>
-                <span>Setting up global payment network</span>
-              </div>
-              <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                <div className="animate-pulse">✨</div>
-                <span>Finalizing your personal account</span>
-              </div>
+              <Loader2 className="w-10 h-10 text-primary animate-spin" aria-hidden="true" />
             </div>
 
-            <p className="text-sm text-muted-foreground">
-              This may take a few seconds...
+            <h1 className="text-2xl font-bold text-foreground mb-3">
+              Creating your personal wallet…
+            </h1>
+
+            {/* #94: visible progress bar so the user can see we're not
+                stuck — pinned to the active step ladder below. */}
+            <div
+              className="h-2 w-full rounded-full bg-muted overflow-hidden mb-2"
+              role="progressbar"
+              aria-valuenow={percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              data-testid="onboarding-wallet-progressbar"
+            >
+              <div
+                className="h-full bg-primary transition-all"
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mb-6">
+              Step {completedSteps + 1} of {totalSteps}
             </p>
+
+            <ul className="space-y-2 mb-6 text-left mx-auto max-w-xs">
+              {WALLET_CREATION_STEPS.map((step, idx) => {
+                const status =
+                  idx < completedSteps
+                    ? 'done'
+                    : idx === completedSteps
+                      ? 'in_progress'
+                      : 'pending';
+                return (
+                  <li
+                    key={step.id}
+                    className="flex items-center gap-2 text-sm"
+                    data-testid={`onboarding-wallet-step-${step.id}`}
+                    data-status={status}
+                  >
+                    {status === 'done' && (
+                      <CheckCircle2 className="w-4 h-4 text-green-600" aria-hidden="true" />
+                    )}
+                    {status === 'in_progress' && (
+                      <Loader2 className="w-4 h-4 text-primary animate-spin" aria-hidden="true" />
+                    )}
+                    {status === 'pending' && (
+                      <span className="w-4 h-4 rounded-full border border-muted-foreground/40" aria-hidden="true" />
+                    )}
+                    <span
+                      className={
+                        status === 'pending'
+                          ? 'text-muted-foreground'
+                          : 'text-foreground'
+                      }
+                    >
+                      {step.label}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+
+            <p className="text-sm text-muted-foreground">
+              This may take a few seconds…
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'failed') {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <div className="flex-1 flex items-center justify-center px-6">
+          <div
+            className="max-w-lg mx-auto text-center w-full"
+            data-testid="onboarding-wallet-failed"
+            role="alert"
+          >
+            <div className="w-20 h-20 mx-auto rounded-full bg-amber-100 dark:bg-amber-900/20 flex items-center justify-center mb-6">
+              <AlertTriangle className="w-10 h-10 text-amber-600" aria-hidden="true" />
+            </div>
+            <h1 className="text-2xl font-bold text-foreground mb-3">
+              Wallet setup didn't finish
+            </h1>
+            <p className="text-muted-foreground mb-2">
+              {errorMessage ?? 'Something went wrong setting up your wallet.'}
+            </p>
+            <p className="text-xs text-muted-foreground mb-6">
+              Attempt {attempt}. Your information is safe — no funds were moved.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setOnboardingStep(2)}
+                data-testid="onboarding-wallet-back"
+              >
+                Go back
+              </Button>
+              <Button
+                variant="hero"
+                onClick={handleCreateWallet}
+                data-testid="onboarding-wallet-retry"
+              >
+                Retry setup
+              </Button>
+            </div>
           </div>
         </div>
       </div>

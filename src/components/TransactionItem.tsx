@@ -136,6 +136,67 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
             </div>
           )}
 
+          {/* Detailed metadata (#92): always-visible context the user attached
+              when sending — notes, category, exchange-rate snapshot, and the
+              destination currency. Hidden when no metadata is present so the
+              section doesn't render an empty box. */}
+          {(transaction.notes ||
+            transaction.category ||
+            transaction.exchangeRate ||
+            transaction.destinationCurrency) && (
+            <div
+              className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2"
+              data-testid="transaction-metadata"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
+                Transaction details
+              </p>
+              <dl className="space-y-1 text-xs">
+                {transaction.category && (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Category</dt>
+                    <dd
+                      className="font-medium text-foreground"
+                      data-testid="transaction-metadata-category"
+                    >
+                      {transaction.category}
+                    </dd>
+                  </div>
+                )}
+                {transaction.destinationCurrency && (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Destination</dt>
+                    <dd className="font-medium text-foreground">
+                      {transaction.destinationCurrency}
+                    </dd>
+                  </div>
+                )}
+                {transaction.exchangeRate && (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Exchange rate</dt>
+                    <dd className="font-medium text-foreground">
+                      1 USDC = {transaction.exchangeRate.toFixed(4)}
+                      {transaction.destinationCurrency
+                        ? ` ${transaction.destinationCurrency}`
+                        : ""}
+                    </dd>
+                  </div>
+                )}
+                {transaction.notes && (
+                  <div className="pt-1">
+                    <dt className="text-muted-foreground">Notes</dt>
+                    <dd
+                      className="mt-0.5 text-foreground/90 whitespace-pre-line break-words"
+                      data-testid="transaction-metadata-notes"
+                    >
+                      {transaction.notes}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
+
           {/* Download Receipt Button */}
           <div className="flex justify-end">
             <DownloadReceiptButton

@@ -34,6 +34,13 @@ const History: React.FC = () => {
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [amountFilter, setAmountFilter] = useState<string>('all');
   const [sortOrder, setSortOrder] = useState<string>('latest');
+  // #93: advanced custom-range filters that layer on top of the preset
+  // date/amount buckets. Empty string == not applied so users can mix and
+  // match presets with bounds (e.g. "Last 7 days" + amount > $25).
+  const [customDateFrom, setCustomDateFrom] = useState<string>('');
+  const [customDateTo, setCustomDateTo] = useState<string>('');
+  const [customAmountMin, setCustomAmountMin] = useState<string>('');
+  const [customAmountMax, setCustomAmountMax] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
   const isMobile = useIsMobile();
@@ -100,7 +107,36 @@ const History: React.FC = () => {
         else if (amountFilter === '50to200') matchesAmount = transaction.amount >= 50 && transaction.amount <= 200;
         else if (amountFilter === 'over200') matchesAmount = transaction.amount > 200;
       }
-      
+
+      // #93: advanced custom-range bounds. Treated as an AND with the
+      // preset filters so callers can narrow further without abandoning
+      // the chip selection.
+      if (customDateFrom) {
+        const from = new Date(customDateFrom);
+        if (!Number.isNaN(from.getTime()) && new Date(transaction.timestamp) < from) {
+          matchesDate = false;
+        }
+      }
+      if (customDateTo) {
+        const to = new Date(customDateTo);
+        if (!Number.isNaN(to.getTime())) {
+          // Treat the end date inclusively (end of day).
+          const inclusiveTo = new Date(to);
+          inclusiveTo.setHours(23, 59, 59, 999);
+          if (new Date(transaction.timestamp) > inclusiveTo) {
+            matchesDate = false;
+          }
+        }
+      }
+      const minAmount = customAmountMin ? Number(customAmountMin) : null;
+      const maxAmount = customAmountMax ? Number(customAmountMax) : null;
+      if (minAmount !== null && Number.isFinite(minAmount) && transaction.amount < minAmount) {
+        matchesAmount = false;
+      }
+      if (maxAmount !== null && Number.isFinite(maxAmount) && transaction.amount > maxAmount) {
+        matchesAmount = false;
+      }
+
       return matchesSearch && matchesStatus && matchesType && matchesDate && matchesAmount;
     });
 
@@ -113,7 +149,19 @@ const History: React.FC = () => {
     });
 
     return filtered;
-  }, [transactions, searchTerm, statusFilter, typeFilter, dateFilter, amountFilter, sortOrder]);
+  }, [
+    transactions,
+    searchTerm,
+    statusFilter,
+    typeFilter,
+    dateFilter,
+    amountFilter,
+    sortOrder,
+    customDateFrom,
+    customDateTo,
+    customAmountMin,
+    customAmountMax,
+  ]);
 
   const handleTransactionClick = useCallback((transactionId: string) => {
     setExpandedTransactionId((currentId) => (currentId === transactionId ? null : transactionId));
@@ -126,6 +174,10 @@ const History: React.FC = () => {
     setDateFilter('all');
     setAmountFilter('all');
     setSortOrder('latest');
+    setCustomDateFrom('');
+    setCustomDateTo('');
+    setCustomAmountMin('');
+    setCustomAmountMax('');
   }, []);
 
   const handleExport = useCallback(() => {
@@ -335,7 +387,7 @@ const History: React.FC = () => {
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-4 mt-3">
-                <FiltersContent 
+                <FiltersContent
                   statusFilter={statusFilter} setStatusFilter={setStatusFilter}
                   typeFilter={typeFilter} setTypeFilter={setTypeFilter}
                   dateFilter={dateFilter} setDateFilter={setDateFilter}
@@ -345,6 +397,10 @@ const History: React.FC = () => {
                   typeOptions={typeOptions}
                   dateOptions={dateOptions}
                   amountOptions={amountOptions}
+                  customDateFrom={customDateFrom} setCustomDateFrom={setCustomDateFrom}
+                  customDateTo={customDateTo} setCustomDateTo={setCustomDateTo}
+                  customAmountMin={customAmountMin} setCustomAmountMin={setCustomAmountMin}
+                  customAmountMax={customAmountMax} setCustomAmountMax={setCustomAmountMax}
                 />
               </CollapsibleContent>
             </Collapsible>
@@ -378,7 +434,7 @@ const History: React.FC = () => {
                   </DrawerDescription>
                 </DrawerHeader>
                 <div className="px-5 py-6 max-h-[60vh] overflow-y-auto">
-                  <FiltersContent 
+                  <FiltersContent
                     statusFilter={statusFilter} setStatusFilter={setStatusFilter}
                     typeFilter={typeFilter} setTypeFilter={setTypeFilter}
                     dateFilter={dateFilter} setDateFilter={setDateFilter}
@@ -388,6 +444,10 @@ const History: React.FC = () => {
                     typeOptions={typeOptions}
                     dateOptions={dateOptions}
                     amountOptions={amountOptions}
+                    customDateFrom={customDateFrom} setCustomDateFrom={setCustomDateFrom}
+                    customDateTo={customDateTo} setCustomDateTo={setCustomDateTo}
+                    customAmountMin={customAmountMin} setCustomAmountMin={setCustomAmountMin}
+                    customAmountMax={customAmountMax} setCustomAmountMax={setCustomAmountMax}
                   />
                 </div>
                 <DrawerFooter className="pt-4 border-t border-border/50">
@@ -505,6 +565,14 @@ interface FiltersContentProps {
   typeOptions: Array<{ value: string; label: string }>;
   dateOptions: Array<{ value: string; label: string }>;
   amountOptions: Array<{ value: string; label: string }>;
+  customDateFrom: string;
+  setCustomDateFrom: (value: string) => void;
+  customDateTo: string;
+  setCustomDateTo: (value: string) => void;
+  customAmountMin: string;
+  setCustomAmountMin: (value: string) => void;
+  customAmountMax: string;
+  setCustomAmountMax: (value: string) => void;
 }
 
 const FiltersContent: React.FC<FiltersContentProps> = ({
@@ -513,7 +581,11 @@ const FiltersContent: React.FC<FiltersContentProps> = ({
   dateFilter, setDateFilter,
   amountFilter, setAmountFilter,
   sortOrder, setSortOrder,
-  statusOptions, typeOptions, dateOptions, amountOptions
+  statusOptions, typeOptions, dateOptions, amountOptions,
+  customDateFrom, setCustomDateFrom,
+  customDateTo, setCustomDateTo,
+  customAmountMin, setCustomAmountMin,
+  customAmountMax, setCustomAmountMax,
 }) => (
   <div className="space-y-6">
     <div className="space-y-3">
@@ -579,6 +651,57 @@ const FiltersContent: React.FC<FiltersContentProps> = ({
             {option.label}
           </Button>
         ))}
+      </div>
+    </div>
+
+    {/* #93: advanced custom-range bounds — additive on top of the preset chips */}
+    <div className="space-y-3 border-t border-border/50 pt-4">
+      <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">
+        Advanced range
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="space-y-1 text-xs">
+          <span className="text-muted-foreground">Date from</span>
+          <Input
+            type="date"
+            value={customDateFrom}
+            onChange={(e) => setCustomDateFrom(e.target.value)}
+            data-testid="filter-custom-date-from"
+          />
+        </label>
+        <label className="space-y-1 text-xs">
+          <span className="text-muted-foreground">Date to</span>
+          <Input
+            type="date"
+            value={customDateTo}
+            onChange={(e) => setCustomDateTo(e.target.value)}
+            data-testid="filter-custom-date-to"
+          />
+        </label>
+        <label className="space-y-1 text-xs">
+          <span className="text-muted-foreground">Min amount</span>
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="$0"
+            value={customAmountMin}
+            onChange={(e) => setCustomAmountMin(e.target.value)}
+            data-testid="filter-custom-amount-min"
+          />
+        </label>
+        <label className="space-y-1 text-xs">
+          <span className="text-muted-foreground">Max amount</span>
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="$∞"
+            value={customAmountMax}
+            onChange={(e) => setCustomAmountMax(e.target.value)}
+            data-testid="filter-custom-amount-max"
+          />
+        </label>
       </div>
     </div>
 

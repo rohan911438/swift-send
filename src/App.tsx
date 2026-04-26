@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { WalletProvider } from "./contexts/WalletContext";
 import { ComplianceProvider } from "./contexts/ComplianceContext";
+import { LanguageProvider } from "./contexts/LanguageContext";
 
 const Auth = lazy(() => import("./pages/Auth"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -137,18 +138,20 @@ function AppRoutes() {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-      <TooltipProvider>
-        <AuthProvider>
-          <WalletProvider>
-            <ComplianceProvider>
-              <SonnerToaster />
-              <BrowserRouter>
-                <AppRoutes />
-              </BrowserRouter>
-            </ComplianceProvider>
-          </WalletProvider>
-        </AuthProvider>
-      </TooltipProvider>
+      <LanguageProvider>
+        <TooltipProvider>
+          <AuthProvider>
+            <WalletProvider>
+              <ComplianceProvider>
+                <SonnerToaster />
+                <BrowserRouter>
+                  <AppRoutes />
+                </BrowserRouter>
+              </ComplianceProvider>
+            </WalletProvider>
+          </AuthProvider>
+        </TooltipProvider>
+      </LanguageProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );
