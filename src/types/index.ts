@@ -21,7 +21,50 @@ export interface User {
   complianceTier?: string;
   verificationLevel?: 'basic' | 'enhanced' | 'full';
   kycStatus?: 'pending' | 'verified' | 'rejected' | 'expired';
+  twoFactorEnabled?: boolean;
+  twoFactorSecret?: string;
 }
+
+export type UserTier = 'basic' | 'silver' | 'gold' | 'platinum';
+
+export interface TierLimits {
+  dailyLimit: number;
+  monthlyLimit: number;
+  maxTransactionAmount: number;
+  minTransactionAmount: number;
+  maxTransactionsPerDay: number;
+}
+
+export const TIER_LIMITS: Record<UserTier, TierLimits> = {
+  basic: {
+    dailyLimit: 500,
+    monthlyLimit: 2000,
+    maxTransactionAmount: 500,
+    minTransactionAmount: 1,
+    maxTransactionsPerDay: 5,
+  },
+  silver: {
+    dailyLimit: 2000,
+    monthlyLimit: 8000,
+    maxTransactionAmount: 2000,
+    minTransactionAmount: 1,
+    maxTransactionsPerDay: 20,
+  },
+  gold: {
+    dailyLimit: 10000,
+    monthlyLimit: 40000,
+    maxTransactionAmount: 10000,
+    minTransactionAmount: 1,
+    maxTransactionsPerDay: 50,
+  },
+  platinum: {
+    dailyLimit: 50000,
+    monthlyLimit: 200000,
+    maxTransactionAmount: 50000,
+    minTransactionAmount: 1,
+    maxTransactionsPerDay: 100,
+  },
+};
 
 export interface AuthUser {
   id: string;
@@ -40,7 +83,12 @@ export interface Contact {
   countryCode: string;
 }
 
-export type TransactionStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type TransactionStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+
+export interface TransactionCancellationConfig {
+  enabled: boolean;
+  windowSeconds: number; // seconds after which cancellation is no longer allowed
+}
 
 export interface Transaction {
   id: string;
