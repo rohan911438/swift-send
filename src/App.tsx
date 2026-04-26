@@ -19,6 +19,7 @@ const History = lazy(() => import("./pages/History"));
 const Profile = lazy(() => import("./pages/Profile"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const ComplianceInfo = lazy(() => import("./pages/ComplianceInfo"));
+const InsightsDashboard = lazy(() => import("./pages/InsightsDashboard"));
 const VerificationFlow = lazy(() =>
   import("./components/VerificationFlow").then((module) => ({
     default: module.VerificationFlow,
@@ -125,6 +126,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <ComplianceInfo />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/insights"
+          element={
+            <ProtectedRoute>
+              <InsightsDashboard />
             </ProtectedRoute>
           }
         />
