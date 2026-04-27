@@ -7,6 +7,8 @@ export interface User {
   email?: string;
   balance: number; // Legacy balance field
   usdcBalance: number; // USDC balance
+  lockedBalance?: number; // Locked/frozen balance
+  pendingTransactions?: number; // Number of pending transactions
   localCurrency: string; // User's local currency code (USD, EUR, etc.)
   exchangeRate: number; // Rate from USDC to local currency
   isVerified: boolean;

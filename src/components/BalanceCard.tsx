@@ -1,4 +1,4 @@
-import { Wallet, Eye, EyeOff, TrendingUp, DollarSign, Shield, Star } from 'lucide-react';
+import { Wallet, Eye, EyeOff, TrendingUp, DollarSign, Shield, Star, Lock, Clock } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -6,13 +6,16 @@ interface BalanceCardProps {
   usdcBalance: number;
   localCurrency: string;
   exchangeRate: number;
+  lockedBalance?: number;
+  pendingTransactions?: number;
   className?: string;
 }
 
-export function BalanceCard({ usdcBalance, localCurrency, exchangeRate, className }: BalanceCardProps) {
+export function BalanceCard({ usdcBalance, localCurrency, exchangeRate, lockedBalance = 0, pendingTransactions = 0, className }: BalanceCardProps) {
   const [showBalance, setShowBalance] = useState(true);
   
   const fiatValue = usdcBalance * exchangeRate;
+  const availableBalance = usdcBalance - lockedBalance;
   const currencySymbol = localCurrency === 'USD' ? '$' : localCurrency === 'EUR' ? '€' : localCurrency;
 
   return (
@@ -68,6 +71,43 @@ export function BalanceCard({ usdcBalance, localCurrency, exchangeRate, classNam
             </span>
           </div>
         )}
+
+        {/* Balance Breakdown */}
+        <div className="mt-4 space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2 opacity-80">
+              <TrendingUp className="w-4 h-4" />
+              <span>Available</span>
+            </div>
+            <span className="font-medium">
+              {showBalance ? `$${availableBalance.toFixed(2)}` : '••••'}
+            </span>
+          </div>
+          
+          {lockedBalance > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2 opacity-80">
+                <Lock className="w-4 h-4" />
+                <span>Locked</span>
+              </div>
+              <span className="font-medium">
+                {showBalance ? `$${lockedBalance.toFixed(2)}` : '••••'}
+              </span>
+            </div>
+          )}
+
+          {pendingTransactions > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2 opacity-80">
+                <Clock className="w-4 h-4" />
+                <span>Pending Transactions</span>
+              </div>
+              <span className="font-medium">
+                {pendingTransactions}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-2 text-sm opacity-90">

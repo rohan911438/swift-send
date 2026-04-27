@@ -114,6 +114,8 @@ export default function Dashboard() {
             usdcBalance={user?.usdcBalance || 0}
             localCurrency={user?.localCurrency || 'USD'}
             exchangeRate={currentExchangeRate}
+            lockedBalance={user?.lockedBalance || 0}
+            pendingTransactions={user?.pendingTransactions || 0}
           />
 
           {/* Compliance Dashboard - Compact View */}
