@@ -1,7 +1,8 @@
 import React, { useCallback, useState, useMemo } from 'react';
-import { ChevronDown, Search, Filter, Calendar, Banknote, TrendingUp, Clock, ArrowLeft, FileDown } from 'lucide-react';
+import { ChevronDown, Search, Filter, Calendar, Banknote, TrendingUp, Clock, ArrowLeft, FileDown, List } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TransactionItem } from '@/components/TransactionItem';
+import { ActivityTimeline } from '@/components/ActivityTimeline';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,7 @@ const History: React.FC = () => {
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [amountFilter, setAmountFilter] = useState<string>('all');
   const [sortOrder, setSortOrder] = useState<string>('latest');
+  const [viewMode, setViewMode] = useState<'list' | 'timeline'>('list');
   // #93: advanced custom-range filters that layer on top of the preset
   // date/amount buckets. Empty string == not applied so users can mix and
   // match presets with bounds (e.g. "Last 7 days" + amount > $25).
@@ -522,27 +524,58 @@ const History: React.FC = () => {
                   Clear all
                 </Button>
               )}
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={handleExport}
-                className="text-xs flex items-center gap-2 border-primary/30 text-primary hover:bg-primary/5"
-              >
-                <FileDown className="w-3.5 h-3.5" />
-                Export to Excel
-              </Button>
             </div>
 
-            {filteredTransactions.map((transaction, index) => (
-              <div key={transaction.id} className="animate-slide-up" style={{ animationDelay: `${index * 50}ms` }}>
-                <TransactionItem
-                  transaction={transaction}
-                  showDetailedView={expandedTransactionId === transaction.id}
-                  onClick={() => handleTransactionClick(transaction.id)}
-                  senderName={user?.name ?? ''}
-                />
+            <div className="flex flex-wrap gap-2 items-center justify-between mb-4">
+              <div className="flex gap-2">
+                <Button
+                  variant={viewMode === 'list' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setViewMode('list')}
+                  className="h-9"
+                >
+                  <List className="w-4 h-4 mr-2" />
+                  List
+                </Button>
+                <Button
+                  variant={viewMode === 'timeline' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setViewMode('timeline')}
+                  className="h-9"
+                >
+                  <Clock className="w-4 h-4 mr-2" />
+                  Timeline
+                </Button>
               </div>
-            ))}
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={handleExport}
+                  className="text-xs flex items-center gap-2 border-primary/30 text-primary hover:bg-primary/5"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  Export to Excel
+                </Button>
+              </div>
+            </div>
+
+            {viewMode === 'timeline' ? (
+              <ActivityTimeline transactions={filteredTransactions} />
+            ) : (
+              <div className="space-y-3">
+                {filteredTransactions.map((transaction, index) => (
+                  <div key={transaction.id} className="animate-slide-up" style={{ animationDelay: `${index * 50}ms` }}>
+                    <TransactionItem
+                      transaction={transaction}
+                      showDetailedView={expandedTransactionId === transaction.id}
+                      onClick={() => handleTransactionClick(transaction.id)}
+                      senderName={user?.name ?? ''}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
