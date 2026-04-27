@@ -55,6 +55,10 @@ export interface AppConfig {
     /** Browser origin(s) allowed for credentialed CORS (comma-separated). */
     corsOrigins: string[];
   };
+  encryption: {
+    /** AES-256-GCM key used to encrypt PII fields at rest. Must be 32 bytes or derivable to 32 bytes. */
+    key: string;
+  };
 }
 
 const intFromEnv = (value: string | undefined, fallback: number) => {
@@ -128,6 +132,9 @@ export const config: AppConfig = {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean),
+  },
+  encryption: {
+    key: process.env.DATA_ENCRYPTION_KEY || 'dev-only-change-me-in-production-please-set-DATA_ENCRYPTION_KEY',
   },
 };
 

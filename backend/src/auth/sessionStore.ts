@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { decryptString, encryptString, transformEncryptedFields } from '../utils/encryption';
 import type { PublicUser, Session, SessionInfo } from './sessionTypes';
 
 const sessions = new Map<string, Session>();
@@ -37,6 +38,32 @@ export function buildMariaUser(): PublicUser {
   };
 }
 
+function encryptPublicUser(user: PublicUser): PublicUser {
+  return transformEncryptedFields(user, ['name', 'email', 'phone'], encryptString);
+}
+
+function decryptPublicUser(user: PublicUser): PublicUser {
+  return transformEncryptedFields(user, ['name', 'email', 'phone'], decryptString);
+}
+
+function encryptSession(session: Session): Session {
+  return {
+    ...session,
+    email: session.email ? encryptString(session.email) : undefined,
+    phone: session.phone ? encryptString(session.phone) : undefined,
+    user: session.user ? encryptPublicUser(session.user) : undefined,
+  };
+}
+
+function decryptSession(session: Session): Session {
+  return {
+    ...session,
+    email: session.email ? decryptString(session.email) : undefined,
+    phone: session.phone ? decryptString(session.phone) : undefined,
+    user: session.user ? decryptPublicUser(session.user) : undefined,
+  };
+}
+
 export function getSession(id: string): Session | undefined {
   const session = sessions.get(id);
   if (!session) return undefined;
@@ -44,7 +71,7 @@ export function getSession(id: string): Session | undefined {
     deleteSession(id);
     return undefined;
   }
-  return session;
+  return decryptSession(session);
 }
 
 export function getSessionUserBalance(id: string): number | null {
@@ -66,7 +93,7 @@ export function adjustSessionUserBalance(id: string, delta: number): number | nu
 }
 
 export function saveSession(session: Session): void {
-  sessions.set(session.id, session);
+  sessions.set(session.id, encryptSession(session));
 }
 
 export function deleteSession(id: string): void {
