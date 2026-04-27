@@ -1,5 +1,7 @@
 import { ExternalServiceError } from '../errors';
 import { config } from '../config';
+import { createLogger } from '../logger';
+import { getCircuitBreaker } from '../utils/resilience';
 import {
   Asset,
   Horizon,
@@ -13,6 +15,13 @@ import {
 
 // Adapter that submits payments to the Stellar network using the official SDK.
 // Treat Stellar as an external dependency: retries, backoff, and structured errors.
+
+const logger = createLogger({ component: 'stellarAdapter' });
+const horizonBreaker = getCircuitBreaker('stellar-horizon-submit', {
+  failureThreshold: 3,
+  resetTimeoutMs: 20_000,
+  halfOpenSuccessThreshold: 1,
+});
 
 export interface StellarSubmitResult {
   status: 'submitted';
@@ -65,6 +74,7 @@ async function buildAndSubmitPayment(transferId: string, from: string, to: strin
 
   const server = new Horizon.Server(config.stellar.horizonUrl);
   const sourceKeypair = Keypair.fromSecret(config.stellar.distributionSecret!);
+  const transferLogger = logger.child({ transferId, destination: to });
 
   // Allow caller to pass a from account id; otherwise use distribution account.
   const sourceAccountId = from || config.stellar.distributionAccount;
@@ -99,6 +109,7 @@ async function buildAndSubmitPayment(transferId: string, from: string, to: strin
   const envelopeXdr = tx.toEnvelope().toXDR('base64');
 
   if (config.stellar.simulateSubmission) {
+    transferLogger.info({ attempt: 0 }, 'stellar submission simulated');
     return {
       status: 'submitted' as const,
       networkId: `sim_${transferId}_${Date.now()}`,
@@ -112,6 +123,7 @@ async function buildAndSubmitPayment(transferId: string, from: string, to: strin
   if (!hash || typeof hash !== 'string') {
     throw new ExternalServiceError('Invalid Horizon response: missing tx hash', { response });
   }
+  transferLogger.info({ networkId: hash }, 'stellar transaction submitted');
   return { status: 'submitted' as const, networkId: hash, envelopeXdr };
 }
 
@@ -129,10 +141,21 @@ export async function submitPayment(
   while (attempt < maxAttempts) {
     attempt += 1;
     try {
-      const result = await buildAndSubmitPayment(transferId, from, to, amount, currency);
+      const result = await horizonBreaker.execute(() =>
+        buildAndSubmitPayment(transferId, from, to, amount, currency),
+      );
       return { ...result, attempt };
     } catch (err: any) {
       const details = extractHorizonErrorDetails(err);
+      logger.warn(
+        {
+          transferId,
+          attempt,
+          status: details.status,
+          resultCodes: details.resultCodes,
+        },
+        'stellar submission attempt failed',
+      );
       if (attempt >= maxAttempts) {
         throw new ExternalServiceError('Stellar submission failed after retries', { ...details, attempt });
       }

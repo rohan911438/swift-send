@@ -1,4 +1,4 @@
-import { logger } from '../../logger';
+import { createLogger } from '../../logger';
 import { EventBus } from '../../core/eventBus';
 import { TransferLifecycle } from './transferLifecycle';
 import { CreateTransferCommand } from './domain';
@@ -43,6 +43,7 @@ export class TransferQueue {
    */
   enqueue(command: CreateTransferCommand): string {
     const jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const logger = this.getLogger({ jobId, transferId: command.idempotencyKey, userId: command.userId });
     const job: QueuedTransferJob = {
       id: jobId,
       command,
@@ -52,7 +53,7 @@ export class TransferQueue {
     };
 
     this.queue.push(job);
-    logger.debug({ jobId, queueLength: this.queue.length }, 'transfer queued');
+    logger.debug({ queueLength: this.queue.length }, 'transfer queued');
 
     this.results.set(jobId, job);
     this.cleanupResults();
@@ -80,8 +81,13 @@ export class TransferQueue {
         const job = this.queue[0];
         job.startedAt = new Date().toISOString();
         job.status = 'processing';
+        const logger = this.getLogger({
+          jobId: job.id,
+          transferId: job.command.idempotencyKey,
+          userId: job.command.userId,
+        });
 
-        logger.debug({ jobId: job.id }, 'processing transfer from queue');
+        logger.debug('processing transfer from queue');
 
         try {
           await this.transfers.createTransfer(job.command);
@@ -89,7 +95,7 @@ export class TransferQueue {
           job.status = 'completed';
           job.completedAt = new Date().toISOString();
 
-          logger.info({ jobId: job.id }, 'transfer processed successfully');
+          logger.info('transfer processed successfully');
 
           await this.eventBus.publish({
             type: 'queue.transfer_completed',
@@ -106,7 +112,7 @@ export class TransferQueue {
             job.retries += 1;
             job.status = 'pending';
             job.startedAt = undefined;
-            logger.warn({ jobId: job.id, retries: job.retries, error: job.error }, 'transfer job retrying');
+            logger.warn({ retries: job.retries, error: job.error }, 'transfer job retrying');
 
             // Re-enqueue after delay
             const retryJob = { ...job };
@@ -119,7 +125,7 @@ export class TransferQueue {
             job.status = 'failed';
             job.completedAt = new Date().toISOString();
 
-            logger.error({ jobId: job.id, retries: job.retries, error }, 'transfer processing failed after retries');
+            logger.error({ retries: job.retries, error: job.error }, 'transfer processing failed after retries');
 
             await this.eventBus.publish({
               type: 'queue.transfer_failed',
@@ -175,5 +181,9 @@ export class TransferQueue {
       }
       this.results.delete(oldestKey);
     }
+  }
+
+  private getLogger(context: Record<string, unknown>) {
+    return createLogger({ component: 'transferQueue', ...context });
   }
 }

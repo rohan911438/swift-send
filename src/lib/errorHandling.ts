@@ -68,15 +68,18 @@ export function parseTransferError(error: unknown): TransferError {
     if (
       message.includes("compliance") ||
       message.includes("limit") ||
-      message.includes("exceed")
+      message.includes("exceed") ||
+      message.includes("velocity") ||
+      message.includes("burst")
     ) {
       return {
         category: "compliance_error",
         message: error.message,
         userMessage:
-          "This transfer exceeds your account limits. Upgrade your account or reduce the amount.",
+          "This transfer exceeds your account limits or rate limits. Wait a moment or reduce the amount.",
         recoveryActions: [
           "Reduce the transfer amount",
+          "Wait before sending another transfer",
           "Upgrade your account for higher limits",
           "Contact support",
         ],

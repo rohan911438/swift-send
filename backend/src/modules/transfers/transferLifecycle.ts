@@ -1,6 +1,6 @@
 import { ValidationError } from '../../errors';
 import { config } from '../../config';
-import { logger } from '../../logger';
+import { createLogger } from '../../logger';
 import { EventBus } from '../../core/eventBus';
 import { ComplianceService } from '../compliance/complianceService';
 import { FraudService } from '../fraud/fraudService';
@@ -18,10 +18,15 @@ export class TransferLifecycle {
   ) {}
 
   async createTransfer(command: CreateTransferCommand) {
+    const transferLogger = this.getLogger({
+      transferId: command.idempotencyKey,
+      userId: command.userId,
+    });
     this.validateCommand(command);
 
     const existing = await this.repository.findByClientReference(command.idempotencyKey);
     if (existing) {
+      transferLogger.info({ state: existing.state }, 'idempotent transfer replayed');
       return existing;
     }
 
@@ -33,6 +38,7 @@ export class TransferLifecycle {
       tierId: command.complianceTier,
     });
     const historicalTransfers = await this.repository.listRecentByUserId(command.userId, 25);
+    this.enforceVelocityLimits(command, complianceDecision.tier, historicalTransfers, transferLogger);
     const fraudAssessment = this.fraud.assessTransfer({
       userId: command.userId,
       transferId: command.idempotencyKey,
@@ -50,6 +56,13 @@ export class TransferLifecycle {
     };
 
     if (!enrichedCompliance.canProceed) {
+      transferLogger.warn(
+        {
+          blockers: enrichedCompliance.blockers,
+          warnings: enrichedCompliance.warnings,
+        },
+        'transfer blocked by compliance',
+      );
       throw new ValidationError('Compliance requirements not satisfied', enrichedCompliance);
     }
 
@@ -99,6 +112,15 @@ export class TransferLifecycle {
         recipientName: this.recipientName(transfer),
       },
     });
+
+    transferLogger.info(
+      {
+        amount: transfer.amount,
+        currency: transfer.currency,
+        recipientType: transfer.recipient.type,
+      },
+      'transfer created',
+    );
 
     if (fraudAssessment.flags.length > 0 || fraudAssessment.requiresReview) {
       this.fraud.logAbnormalActivity({
@@ -170,7 +192,8 @@ export class TransferLifecycle {
   }
 
   private scheduleSettlement(transferId: string) {
-    logger.debug({ transferId, delay: config.queues.settlementDelayMs }, 'queuing settlement attempt');
+    const transferLogger = this.getLogger({ transferId });
+    transferLogger.debug({ delay: config.queues.settlementDelayMs }, 'queuing settlement attempt');
     setTimeout(() => this.settleTransfer(transferId), config.queues.settlementDelayMs);
   }
 
@@ -180,12 +203,15 @@ export class TransferLifecycle {
   }
 
   private async settleTransfer(transferId: string) {
+    const transferLogger = this.getLogger({ transferId });
     const transfer = await this.repository.findById(transferId);
     if (!transfer) {
+      transferLogger.warn('transfer missing during settlement');
       return;
     }
 
     if (!['held', 'submitted'].includes(transfer.state)) {
+      transferLogger.debug({ state: transfer.state }, 'transfer not eligible for settlement');
       return;
     }
 
@@ -212,10 +238,24 @@ export class TransferLifecycle {
           recipientName: this.recipientName(transfer),
         },
       });
+      transferLogger.info(
+        {
+          amount: transfer.amount,
+          currency: transfer.currency,
+          attempts: transfer.processingAttempts,
+        },
+        'transfer settled',
+      );
     } catch (err: unknown) {
       transfer.processingAttempts += 1;
       transfer.lastError = err instanceof Error ? err.message : 'unknown settlement error';
-      logger.error({ transferId, err }, 'transfer settlement failed');
+      transferLogger.error(
+        {
+          error: err instanceof Error ? err.message : String(err),
+          attempts: transfer.processingAttempts,
+        },
+        'transfer settlement failed',
+      );
 
       if (transfer.processingAttempts >= config.queues.maxSettlementAttempts) {
         await this.wallets.refundEscrow({
@@ -244,5 +284,59 @@ export class TransferLifecycle {
 
       await this.repository.update(transfer);
     }
+  }
+
+  private enforceVelocityLimits(
+    command: CreateTransferCommand,
+    tier: { maxTransactionsPerMinute: number; maxTransactionsPerHour: number },
+    historicalTransfers: TransferRecord[],
+    transferLogger: ReturnType<typeof createLogger>,
+  ) {
+    const now = Date.now();
+    const recentMinute = historicalTransfers.filter(
+      (record) => now - new Date(record.createdAt).getTime() <= 60 * 1000,
+    );
+    const recentHour = historicalTransfers.filter(
+      (record) => now - new Date(record.createdAt).getTime() <= 60 * 60 * 1000,
+    );
+
+    const minuteCount = recentMinute.length + 1;
+    const hourCount = recentHour.length + 1;
+
+    if (minuteCount > tier.maxTransactionsPerMinute) {
+      transferLogger.warn(
+        {
+          minuteCount,
+          maxTransactionsPerMinute: tier.maxTransactionsPerMinute,
+        },
+        'transfer blocked by minute velocity limit',
+      );
+      throw new ValidationError('Transfer velocity limit exceeded', {
+        window: 'minute',
+        currentCount: minuteCount,
+        limit: tier.maxTransactionsPerMinute,
+        userId: command.userId,
+      });
+    }
+
+    if (hourCount > tier.maxTransactionsPerHour) {
+      transferLogger.warn(
+        {
+          hourCount,
+          maxTransactionsPerHour: tier.maxTransactionsPerHour,
+        },
+        'transfer blocked by hourly velocity limit',
+      );
+      throw new ValidationError('Transfer velocity limit exceeded', {
+        window: 'hour',
+        currentCount: hourCount,
+        limit: tier.maxTransactionsPerHour,
+        userId: command.userId,
+      });
+    }
+  }
+
+  private getLogger(context: Record<string, unknown>) {
+    return createLogger({ component: 'transferLifecycle', ...context });
   }
 }

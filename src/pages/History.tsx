@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useDeferredValue } from 'react';
 import { ChevronDown, Search, Filter, Calendar, Banknote, TrendingUp, Clock, ArrowLeft, FileDown, List } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TransactionItem } from '@/components/TransactionItem';
@@ -11,8 +11,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { useNavigate } from 'react-router-dom';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Bar, BarChart, Cell, Pie, PieChart, XAxis, YAxis } from 'recharts';
-import { useQuery } from '@tanstack/react-query';
-import { fetchSpendingInsights, fetchTransactions } from '@/lib/activity';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { fetchSpendingInsights, searchTransactions } from '@/lib/activity';
 import { 
   Drawer, 
   DrawerClose, 
@@ -27,6 +27,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/contexts/AuthContext';
 
 const History: React.FC = () => {
+  const PAGE_SIZE = 20;
   const navigate = useNavigate();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,22 +46,56 @@ const History: React.FC = () => {
   const [customAmountMax, setCustomAmountMax] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const isMobile = useIsMobile();
+  const deferredSearchTerm = useDeferredValue(searchTerm);
 
   const handleGoBack = useCallback(() => {
     navigate(-1); // Go back to previous page
   }, [navigate]);
 
-  const transactionsQuery = useQuery({
-    queryKey: ['activity', 'transactions', 100],
-    queryFn: () => fetchTransactions(100),
+  const transactionsQuery = useInfiniteQuery({
+    queryKey: [
+      'activity',
+      'transactions',
+      deferredSearchTerm,
+      statusFilter,
+      customDateFrom,
+      customDateTo,
+      customAmountMin,
+      customAmountMax,
+    ],
+    queryFn: ({ pageParam = 0 }) =>
+      searchTransactions({
+        q: deferredSearchTerm || undefined,
+        status: statusFilter === 'all' ? undefined : (statusFilter as 'pending' | 'completed' | 'failed'),
+        dateFrom: customDateFrom ? new Date(customDateFrom) : undefined,
+        dateTo: customDateTo ? new Date(customDateTo) : undefined,
+        amountMin: customAmountMin ? Number(customAmountMin) : undefined,
+        amountMax: customAmountMax ? Number(customAmountMax) : undefined,
+        limit: PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, pages) => {
+      if (lastPage.items.length < PAGE_SIZE) {
+        return undefined;
+      }
+      return pages.length * PAGE_SIZE;
+    },
   });
   const insightsQuery = useQuery({
     queryKey: ['activity', 'insights'],
     queryFn: fetchSpendingInsights,
   });
-  const transactions = transactionsQuery.data || [];
+  const transactions = useMemo(
+    () => transactionsQuery.data?.pages.flatMap((page) => page.items) || [],
+    [transactionsQuery.data],
+  );
   const insights = insightsQuery.data;
+  const hasNextPage = transactionsQuery.hasNextPage;
+  const isFetchingNextPage = transactionsQuery.isFetchingNextPage;
+  const fetchNextPage = transactionsQuery.fetchNextPage;
 
   // Calculate summary statistics
   const summary = useMemo(() => {
@@ -164,6 +199,26 @@ const History: React.FC = () => {
     customAmountMin,
     customAmountMax,
   ]);
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target || !hasNextPage) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry?.isIntersecting && !isFetchingNextPage) {
+          void fetchNextPage();
+        }
+      },
+      { rootMargin: '240px' },
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   const handleTransactionClick = useCallback((transactionId: string) => {
     setExpandedTransactionId((currentId) => (currentId === transactionId ? null : transactionId));
@@ -480,7 +535,7 @@ const History: React.FC = () => {
           </div>
         )}
 
-        {!transactionsQuery.isLoading && filteredTransactions.length === 0 ? (
+        {!transactionsQuery.isLoading && filteredTransactions.length === 0 && !hasNextPage ? (
           <div className="text-center py-12">
             {searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all' || amountFilter !== 'all' || sortOrder !== 'latest' ? (
               <div className="space-y-3">
@@ -574,6 +629,18 @@ const History: React.FC = () => {
                     />
                   </div>
                 ))}
+              </div>
+            )}
+            {hasNextPage && (
+              <div ref={loadMoreRef} className="flex items-center justify-center py-6">
+                {isFetchingNextPage ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+                    Loading more transactions
+                  </div>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Scroll to load more</span>
+                )}
               </div>
             )}
           </div>
