@@ -20,6 +20,7 @@ const History = lazy(() => import("./pages/History"));
 const Profile = lazy(() => import("./pages/Profile"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const ComplianceInfo = lazy(() => import("./pages/ComplianceInfo"));
+const Refunds = lazy(() => import("./pages/Refunds"));
 const VerificationFlow = lazy(() =>
   import("./components/VerificationFlow").then((module) => ({
     default: module.VerificationFlow,
@@ -126,6 +127,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <ComplianceInfo />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/refunds"
+          element={
+            <ProtectedRoute>
+              <Refunds />
             </ProtectedRoute>
           }
         />

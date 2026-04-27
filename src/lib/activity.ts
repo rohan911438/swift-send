@@ -208,3 +208,38 @@ function parseNotificationDto(dto: NotificationsDto['items'][number]): UserNotif
     })),
   };
 }
+
+export async function fetchRefunds(): Promise<import('@/types/activity').RefundsResponse> {
+  const response = await apiFetch('/refunds');
+  const body = await requireJson<{
+    items: Array<{
+      id: string;
+      transfer_id: string;
+      user_id: string;
+      amount: number;
+      currency: string;
+      reason: string;
+      status: 'pending' | 'processing' | 'completed' | 'failed';
+      initiated_at: string;
+      completed_at?: string;
+      recipient_name?: string;
+    }>;
+    total: number;
+  }>(response, 'Could not load refunds');
+
+  return {
+    total: body.total,
+    items: body.items.map((r) => ({
+      id: r.id,
+      transferId: r.transfer_id,
+      userId: r.user_id,
+      amount: r.amount,
+      currency: r.currency,
+      reason: r.reason,
+      status: r.status,
+      initiatedAt: new Date(r.initiated_at),
+      completedAt: r.completed_at ? new Date(r.completed_at) : undefined,
+      recipientName: r.recipient_name,
+    })),
+  };
+}
