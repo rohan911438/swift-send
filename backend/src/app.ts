@@ -15,10 +15,12 @@ import { config } from './config';
 import { logger } from './logger';
 import { createContainer } from './container';
 import { AppError } from './errors';
+import { initRedisClient, closeRedisClient } from './utils/redisCache';
 
 export async function buildApp() {
   const app = Fastify({ logger });
   const container = createContainer();
+  await initRedisClient();
 
   app.decorate('container', container);
 
@@ -77,6 +79,7 @@ export async function buildApp() {
 
   app.addHook('onClose', async () => {
     logger.info('Server shutting down');
+    await closeRedisClient();
   });
 
   return app;

@@ -44,6 +44,12 @@ export interface AppConfig {
     healthCacheTtlMs: number;
     activityCacheTtlMs: number;
   };
+  cache: {
+    redisUrl: string;
+    enabled: boolean;
+    balanceCacheTtlSeconds: number;
+    activityCacheTtlSeconds: number;
+  };
   features: {
     enableEscrow: boolean;
     enableRiskScoring: boolean;
@@ -115,6 +121,12 @@ export const config: AppConfig = {
   features: {
     enableEscrow: boolFromEnv(process.env.FEATURE_ESCROW, true),
     enableRiskScoring: boolFromEnv(process.env.FEATURE_RISK_SCORING, true),
+  },
+  cache: {
+    redisUrl: process.env.REDIS_URL || '',
+    enabled: !!process.env.REDIS_URL,
+    balanceCacheTtlSeconds: intFromEnv(process.env.BALANCE_CACHE_TTL_SECONDS, 10),
+    activityCacheTtlSeconds: intFromEnv(process.env.ACTIVITY_CACHE_TTL_SECONDS, 10),
   },
   contracts: {
     simpleCounter: process.env.CONTRACT_SIMPLE_COUNTER || 'CA7JEZGXWTX62LE6HSW7C6DQHDFNEKEFYI2AYNXU67AJPKIKNRINTCHB',

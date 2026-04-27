@@ -23,6 +23,7 @@ This prototype exposes:
 
 Notes:
 - This is a local prototype with in-memory stores for demo and testing the frontend integration. Replace with Postgres, real ledger and KMS in production.
+- API-level caching is supported via Redis for repeated balance and activity history requests when `REDIS_URL` is configured.
 - Sensitive user fields are encrypted in-memory before storage using AES-256-GCM. In production, set `DATA_ENCRYPTION_KEY` and replace the in-memory session store with a persistent, key-managed repository.
 
 Project structure (prototype)

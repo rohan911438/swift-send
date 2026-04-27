@@ -58,32 +58,32 @@ export function createContainer(): AppContainer {
 
   recurringWorker.start();
 
-  eventBus.subscribe<{ userId: string }>('transfer.created', (event) => {
-    activity.invalidateUser(event.payload.userId);
+  eventBus.subscribe<{ userId: string }>('transfer.created', async (event) => {
+    await activity.invalidateUser(event.payload.userId);
   });
   eventBus.subscribe<{ userId: string; transferId: string; amount: number; recipientName: string }>('transfer.settled', async (event) => {
-    activity.invalidateUser(event.payload.userId);
+    await activity.invalidateUser(event.payload.userId);
     await notifications.notifyTransferSettled(event.payload);
   });
   eventBus.subscribe<{ userId: string; amount: number; recipientName: string; transferId: string; error?: string }>(
     'transfer.failed',
     async (event) => {
-      activity.invalidateUser(event.payload.userId);
+      await activity.invalidateUser(event.payload.userId);
       await notifications.notifyTransferFailed(event.payload);
     },
   );
   eventBus.subscribe<{ userId: string; transferId: string; score: number; flags: string[] }>(
     'transfer.flagged',
     async (event) => {
-      activity.invalidateUser(event.payload.userId);
+      await activity.invalidateUser(event.payload.userId);
       await notifications.notifyFraudFlagged(event.payload);
     },
   );
-  eventBus.subscribe<{ userId: string }>('notification.created', (event) => {
-    activity.invalidateUser(event.payload.userId);
+  eventBus.subscribe<{ userId: string }>('notification.created', async (event) => {
+    await activity.invalidateUser(event.payload.userId);
   });
-  eventBus.subscribe<{ userId: string }>('notification.read', (event) => {
-    activity.invalidateUser(event.payload.userId);
+  eventBus.subscribe<{ userId: string }>('notification.read', async (event) => {
+    await activity.invalidateUser(event.payload.userId);
   });
 
   return {

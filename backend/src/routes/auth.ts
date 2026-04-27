@@ -11,6 +11,7 @@ import {
   saveSession,
 } from '../auth/sessionStore';
 import { authenticate } from '../middleware/authenticate';
+import { deleteCachedKey, getCachedJson, setCachedJson } from '../utils/redisCache';
 
 interface LoginBody {
   identifier: string;
@@ -139,6 +140,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       session.user = undefined;
     }
     saveSession(session);
+    await deleteCachedKey(`auth:me:${session.id}`);
 
     await setAuthCookie(reply, session);
 
@@ -164,18 +166,34 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
   fastify.get('/auth/me', { preHandler: [authenticate] }, async (request, reply) => {
     const token = request.user as JwtSessionPayload;
+    const cacheKey = `auth:me:${token.sub}`;
+    const cached = await getCachedJson<{
+      authUser: ReturnType<typeof sessionToAuthUser>;
+      session: ReturnType<typeof getSessionInfo>;
+      user: PublicUser | null;
+      onboardingRequired: boolean;
+    }>(cacheKey);
+    if (cached) {
+      reply.header('Cache-Control', 'private, max-age=10');
+      return reply.send(cached);
+    }
+
     const session = getSession(token.sub);
     if (!session) {
       clearAuthCookie(reply);
       return reply.status(401).send({ error: 'Session expired' });
     }
 
-    return reply.send({
+    const response = {
       authUser: sessionToAuthUser(session),
       session: getSessionInfo(session),
       user: session.user ?? null,
       onboardingRequired: session.verified && !session.onboardingCompleted && !session.user,
-    });
+    } as const;
+
+    await setCachedJson(cacheKey, response, config.cache.balanceCacheTtlSeconds);
+    reply.header('Cache-Control', 'private, max-age=10');
+    return reply.send(response);
   });
 
   fastify.post('/auth/session/heartbeat', { preHandler: [authenticate] }, async (request, reply) => {
@@ -223,6 +241,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
     session.hasWallet = true;
     session.onboardingCompleted = true;
     saveSession(session);
+    await deleteCachedKey(`auth:me:${session.id}`);
 
     await setAuthCookie(reply, session);
 

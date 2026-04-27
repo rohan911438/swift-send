@@ -2,6 +2,11 @@ import { config } from '../../config';
 import type { NotificationService } from '../notifications/notificationService';
 import type { TransferRecord } from '../transfers/domain';
 import type { TransferRepository } from '../transfers/repository';
+import {
+  deleteCachedKeys,
+  getCachedJson,
+  setCachedJson,
+} from '../../utils/redisCache';
 import { ExportService } from './exportService';
 
 export interface ActivityTransactionDto {
@@ -128,10 +133,10 @@ export class ActivityService {
   ) {}
 
   async listTransactions(userId: string, limit = 50): Promise<ActivityTransactionDto[]> {
-    const cacheKey = `${userId}:${limit}`;
-    const cached = this.transactionCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.value;
+    const cacheKey = `activity:transactions:${userId}:${limit}`;
+    const cached = await getCachedJson<ActivityTransactionDto[]>(cacheKey);
+    if (cached) {
+      return cached;
     }
 
     const records = await this.repository.listRecentByUserId(userId, limit);
@@ -140,6 +145,7 @@ export class ActivityService {
       expiresAt: Date.now() + config.performance.activityCacheTtlMs,
       value: transactions,
     });
+    await setCachedJson(cacheKey, transactions, config.cache.activityCacheTtlSeconds);
     return transactions;
   }
 
@@ -268,6 +274,7 @@ export class ActivityService {
       expiresAt: Date.now() + config.performance.activityCacheTtlMs,
       value: insights,
     });
+    await setCachedJson(`activity:insights:${userId}`, insights, config.cache.activityCacheTtlSeconds);
 
     return insights;
   }
@@ -437,11 +444,13 @@ export class ActivityService {
     return this.notifications.listByUserId(userId, limit);
   }
 
-  invalidateUser(userId: string) {
+  async invalidateUser(userId: string) {
     this.insightsCache.delete(userId);
     Array.from(this.transactionCache.keys())
-      .filter((key) => key.startsWith(`${userId}:`))
+      .filter((key) => key.startsWith(`activity:transactions:${userId}:`))
       .forEach((key) => this.transactionCache.delete(key));
+    await deleteCachedKeys(`activity:transactions:${userId}:*`);
+    await deleteCachedKeys(`activity:insights:${userId}`);
   }
 
   private toTransactionDto(record: TransferRecord): ActivityTransactionDto {
