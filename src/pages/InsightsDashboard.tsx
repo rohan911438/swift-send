@@ -16,6 +16,8 @@ import { TrendingUp, DollarSign, CheckCircle2, XCircle, BarChart3, Tag } from 'l
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonInsightsGrid, SkeletonBarChart } from '@/components/SkeletonLoaders';
+import { ComparativeInsights } from '@/components/ComparativeInsights';
 import { BottomNav } from '@/components/BottomNav';
 import { fetchSpendingInsights } from '@/lib/activity';
 import type { SpendingInsights } from '@/types/activity';
@@ -57,6 +59,7 @@ export default function InsightsDashboard() {
           <>
             <SummaryCards summary={data?.summary} isLoading={isLoading} />
             <MonthlyTrendsChart data={data?.monthlyTransferData} isLoading={isLoading} />
+            <ComparativeInsights data={data?.monthlyTransferData} isLoading={isLoading} />
             <CategoryBreakdownChart data={data?.categoryData} isLoading={isLoading} />
             <TopExpensesList expenses={data?.topExpenses} isLoading={isLoading} />
           </>
@@ -105,13 +108,7 @@ function SummaryCards({
     : [];
 
   if (isLoading) {
-    return (
-      <div className="grid grid-cols-2 gap-3">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 rounded-xl" />
-        ))}
-      </div>
-    );
+    return <SkeletonInsightsGrid cells={4} />;
   }
 
   return (
@@ -151,7 +148,7 @@ function MonthlyTrendsChart({
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <Skeleton className="h-48 w-full rounded-xl" />
+          <SkeletonBarChart bars={6} />
         ) : !data || data.length === 0 ? (
           <EmptyState message="No monthly data yet." />
         ) : (
