@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { SkeletonTransactionList, SkeletonCard } from '@/components/SkeletonLoaders';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BalanceCard } from '@/components/BalanceCard';
@@ -339,9 +340,7 @@ export default function Dashboard() {
 
             <div className="space-y-3">
               {transactionsQuery.isLoading ? (
-                Array.from({ length: 3 }).map((_, index) => (
-                  <div key={index} className="h-24 rounded-xl bg-muted animate-pulse" />
-                ))
+                <SkeletonTransactionList rows={3} />
               ) : recentTransactions.length > 0 ? (
                 recentTransactions.map((transaction) => (
                   <TransactionItem
