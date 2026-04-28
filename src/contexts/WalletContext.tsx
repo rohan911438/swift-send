@@ -7,11 +7,13 @@ interface WalletContextType {
   availableWallets: StellarWallet[];
   isConnecting: boolean;
   isSigningTransaction: boolean;
+  isSyncing: boolean;
   connectWallet: (provider: WalletProvider) => Promise<void>;
   disconnectWallet: () => void;
   signTransaction: (transaction: any) => Promise<string>;
   refreshBalance: () => Promise<void>;
   getRecentTransactions: () => Promise<WalletTransaction[]>;
+  syncStateOnReload: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -39,6 +41,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   });
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSigningTransaction, setIsSigningTransaction] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [walletDetectionTrigger, setWalletDetectionTrigger] = useState(0);
   const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>(() =>
     parseStoredTransactions(localStorage.getItem(WALLET_TX_STORAGE_KEY))
@@ -580,6 +583,20 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return [...walletTransactions].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   };
 
+  const syncStateOnReload = useCallback(async () => {
+    setIsSyncing(true);
+    try {
+      const savedConnection = localStorage.getItem('stellar-wallet-connection');
+      if (savedConnection && connectionState.isConnected) {
+        await syncPendingTransactions();
+      }
+    } catch (error) {
+      console.error('Failed to sync state on reload:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [connectionState.isConnected, syncPendingTransactions]);
+
   // Auto-reconnect on page load if previously connected
   useEffect(() => {
     const savedConnection = localStorage.getItem('stellar-wallet-connection');
@@ -588,7 +605,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         const { provider } = JSON.parse(savedConnection);
         if (provider && provider !== 'internal') {
           // Attempt silent reconnection
-          connectWallet(provider).catch(() => {
+          connectWallet(provider).then(() => {
+            // Sync pending transactions after reconnection
+            void syncStateOnReload();
+          }).catch(() => {
             // Silent fail - user will need to reconnect manually
             localStorage.removeItem('stellar-wallet-connection');
           });
@@ -617,11 +637,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         availableWallets,
         isConnecting,
         isSigningTransaction,
+        isSyncing,
         connectWallet,
         disconnectWallet,
         signTransaction,
         refreshBalance,
-        getRecentTransactions
+        getRecentTransactions,
+        syncStateOnReload
       }}
     >
       {children}

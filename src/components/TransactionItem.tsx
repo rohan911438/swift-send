@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { ArrowUpRight, ArrowDownLeft, Phone, Receipt, Clock, ExternalLink } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Phone, Receipt, Clock, ExternalLink, Zap } from 'lucide-react';
 import { Transaction } from '@/types';
 import { StatusBadge } from './StatusBadge';
 import { Badge } from './ui/badge';
@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { formatDistanceToNow, format } from 'date-fns';
 import { splitFee } from '@/lib/fees';
 import { DownloadReceiptButton } from '@/components/DownloadReceiptButton';
+import { getTagColorClass } from '@/lib/tags';
 
 interface TransactionItemProps {
   transaction: Transaction;
@@ -75,8 +76,17 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
         </div>
       </div>
 
-      {transaction.risk && transaction.risk.level !== 'low' && (
-        <div className="flex justify-start">
+      <div className="flex gap-2 flex-wrap">
+        {transaction.isOptimistic && (
+          <Badge
+            variant="outline"
+            className="text-[11px] border-blue-300 text-blue-700 bg-blue-50 dark:bg-blue-900/20 inline-flex items-center gap-1"
+          >
+            <Zap className="w-3 h-3" />
+            Optimistic Update
+          </Badge>
+        )}
+        {transaction.risk && transaction.risk.level !== 'low' && (
           <Badge
             variant="outline"
             className={cn(
@@ -88,8 +98,8 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
           >
             {transaction.risk.level === 'high' ? 'Fraud Review' : 'Risk Flag'} • Score {transaction.risk.score}
           </Badge>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Detailed Information */}
       {showDetailedView && (
@@ -176,7 +186,8 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
           {(transaction.notes ||
             transaction.category ||
             transaction.exchangeRate ||
-            transaction.destinationCurrency) && (
+            transaction.destinationCurrency ||
+            transaction.tags?.length) && (
             <div
               className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2"
               data-testid="transaction-metadata"
@@ -227,6 +238,22 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
                   </div>
                 )}
               </dl>
+              {transaction.tags && transaction.tags.length > 0 && (
+                <div className="pt-2 border-t border-border/50">
+                  <p className="text-xs text-muted-foreground mb-2">Tags</p>
+                  <div className="flex flex-wrap gap-1">
+                    {transaction.tags.map((tag) => (
+                      <Badge
+                        key={tag}
+                        className={cn('text-[10px]', getTagColorClass(tag))}
+                        variant="outline"
+                      >
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

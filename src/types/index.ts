@@ -115,9 +115,11 @@ export interface Transaction {
   destinationCurrency?: string;
   category?: string;
   notes?: string;
+  tags?: string[];
   txHash?: string;
   explorerUrl?: string;
   risk?: TransactionRiskSummary;
+  isOptimistic?: boolean;
 }
 
 export interface FeeBreakdown {
