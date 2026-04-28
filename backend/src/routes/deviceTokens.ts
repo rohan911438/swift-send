@@ -48,7 +48,7 @@ export async function registerDeviceToken(
       createdAt: deviceToken.createdAt,
     });
   } catch (error) {
-    logger.error('[registerDeviceToken] Error:', error);
+    logger.error({ err: error }, '[registerDeviceToken] Error');
     return reply.status(500).send({ error: 'Failed to register device token' });
   }
 }
@@ -79,7 +79,7 @@ export async function unregisterDeviceToken(
     logger.debug(`[unregisterDeviceToken] Unregistered device token for user: ${userId}`);
     return reply.status(200).send({ message: 'Device token unregistered' });
   } catch (error) {
-    logger.error('[unregisterDeviceToken] Error:', error);
+    logger.error({ err: error }, '[unregisterDeviceToken] Error');
     return reply.status(500).send({ error: 'Failed to unregister device token' });
   }
 }
@@ -108,7 +108,7 @@ export async function listDeviceTokens(
       })),
     });
   } catch (error) {
-    logger.error('[listDeviceTokens] Error:', error);
+    logger.error({ err: error }, '[listDeviceTokens] Error');
     return reply.status(500).send({ error: 'Failed to list device tokens' });
   }
 }

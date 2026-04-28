@@ -7,6 +7,7 @@ import { FraudService } from '../fraud/fraudService';
 import { WalletService } from '../wallets/walletService';
 import { TransferRepository } from './repository';
 import { CreateTransferCommand, TransferRecord, TransferState } from './domain';
+import { TransferEventType } from './events';
 
 export class TransferLifecycle {
   constructor(
@@ -95,7 +96,7 @@ export class TransferLifecycle {
       );
       await this.repository.save(transfer);
       await this.eventBus.publish({
-        type: 'transfer.created',
+        type: TransferEventType.Created,
         timestamp: new Date().toISOString(),
         payload: {
           userId: transfer.userId,
@@ -103,7 +104,6 @@ export class TransferLifecycle {
           amount: transfer.amount,
           currency: transfer.currency,
           recipientName: this.recipientName(transfer),
-          status: 'awaiting_multisig',
         },
       });
       return transfer;
@@ -126,7 +126,7 @@ export class TransferLifecycle {
     await this.repository.save(transfer);
 
     await this.eventBus.publish({
-      type: 'transfer.created',
+      type: TransferEventType.Created,
       timestamp: new Date().toISOString(),
       payload: {
         userId: transfer.userId,
@@ -147,20 +147,16 @@ export class TransferLifecycle {
     );
 
     if (fraudAssessment.flags.length > 0 || fraudAssessment.requiresReview) {
-      this.fraud.logAbnormalActivity({
-        userId: transfer.userId,
-        transferId: transfer.id,
-        assessment: fraudAssessment,
-        recipientName: this.recipientName(transfer),
-      });
       await this.eventBus.publish({
-        type: 'transfer.flagged',
+        type: TransferEventType.Flagged,
         timestamp: new Date().toISOString(),
         payload: {
           userId: transfer.userId,
           transferId: transfer.id,
-          score: fraudAssessment.score,
-          flags: fraudAssessment.flags.map((flag) => flag.label),
+          assessment: fraudAssessment,
+          amount: transfer.amount,
+          currency: transfer.currency,
+          recipientName: this.recipientName(transfer),
         },
       });
     }
@@ -275,10 +271,76 @@ export class TransferLifecycle {
     }
   }
 
+  async listUserTransfers(userId: string) {
+    return this.repository.listByUserId(userId);
+  }
+
+  private enforceVelocityLimits(
+    command: CreateTransferCommand,
+    tier: { maxTransactionsPerMinute: number; maxTransactionsPerHour: number },
+    historicalTransfers: TransferRecord[],
+    logger: ReturnType<typeof createLogger>,
+  ) {
+    const now = Date.now();
+    const oneMinuteAgo = now - 60 * 1000;
+    const oneHourAgo = now - 60 * 60 * 1000;
+
+    const recentMinuteTransfers = historicalTransfers.filter(
+      (transfer) => new Date(transfer.createdAt).getTime() >= oneMinuteAgo,
+    );
+    const recentHourTransfers = historicalTransfers.filter(
+      (transfer) => new Date(transfer.createdAt).getTime() >= oneHourAgo,
+    );
+
+    if (recentMinuteTransfers.length + 1 > tier.maxTransactionsPerMinute) {
+      logger.warn(
+        {
+          limit: tier.maxTransactionsPerMinute,
+          recentTransfers: recentMinuteTransfers.length,
+          transferId: command.idempotencyKey,
+        },
+        'transfer rejected by per-minute velocity rule',
+      );
+      throw new ValidationError('Transfer velocity limit exceeded: too many transfers per minute');
+    }
+
+    if (recentHourTransfers.length + 1 > tier.maxTransactionsPerHour) {
+      logger.warn(
+        {
+          limit: tier.maxTransactionsPerHour,
+          recentTransfers: recentHourTransfers.length,
+          transferId: command.idempotencyKey,
+        },
+        'transfer rejected by per-hour velocity rule',
+      );
+      throw new ValidationError('Transfer velocity limit exceeded: too many transfers per hour');
+    }
+  }
+
+  private getLogger(context: Record<string, unknown>) {
+    return createLogger({ component: 'transferLifecycle', ...context });
+  }
+
   private appendStatus(transfer: TransferRecord, state: TransferState, notes?: string) {
+    const previousState = transfer.state;
     transfer.state = state;
     transfer.statusHistory.push({ state, at: new Date().toISOString(), notes });
     transfer.updatedAt = new Date().toISOString();
+
+    void this.eventBus.publish({
+      type: TransferEventType.StateChanged,
+      timestamp: transfer.updatedAt,
+      payload: {
+        userId: transfer.userId,
+        transferId: transfer.id,
+        amount: transfer.amount,
+        currency: transfer.currency,
+        recipientName: this.recipientName(transfer),
+        previousState,
+        state,
+        notes,
+      },
+    });
   }
 
   private scheduleSettlement(transferId: string) {
@@ -346,14 +408,14 @@ export class TransferLifecycle {
       this.appendStatus(transfer, 'settled');
       transfer.processingAttempts += 1;
       await this.repository.update(transfer);
-      await this.compliance.recordSuccessfulTransfer(transfer.userId, transfer.amount);
       await this.eventBus.publish({
-        type: 'transfer.settled',
+        type: TransferEventType.Settled,
         timestamp: new Date().toISOString(),
         payload: {
           userId: transfer.userId,
           transferId: transfer.id,
           amount: transfer.amount,
+          currency: transfer.currency,
           recipientName: this.recipientName(transfer),
         },
       });
@@ -387,12 +449,13 @@ export class TransferLifecycle {
         });
         this.appendStatus(transfer, 'failed', transfer.lastError);
         await this.eventBus.publish({
-          type: 'transfer.failed',
+          type: TransferEventType.Failed,
           timestamp: new Date().toISOString(),
           payload: {
             userId: transfer.userId,
             transferId: transfer.id,
             amount: transfer.amount,
+            currency: transfer.currency,
             recipientName: this.recipientName(transfer),
             error: transfer.lastError,
           },

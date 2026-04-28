@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { logger } from '@/logger';
+import { logger } from '../../logger';
 
 interface DeviceToken {
   id: string;

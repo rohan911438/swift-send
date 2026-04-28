@@ -21,6 +21,7 @@ import { InMemoryRecurringPaymentRepository } from "./modules/recurring-payments
 import { ComplianceLogService } from "./modules/compliance/complianceLogService";
 import { ErrorLogService } from "./modules/system/errorLogService";
 import { StellarFeeService } from "./services/stellarFeeService";
+import { registerTransferEventHandlers } from "./modules/transfers/transferEventHandlers";
 
 export interface AppContainer {
   config: AppConfig;
@@ -29,6 +30,7 @@ export interface AppContainer {
     transfers: TransferLifecycle;
     transferQueue: TransferQueue;
     wallets: WalletService;
+    countryMetadata: CountryMetadataService;
     compliance: ComplianceService;
     complianceLog: ComplianceLogService;
     fraud: FraudService;
@@ -86,36 +88,12 @@ export function createContainer(): AppContainer {
 
   recurringWorker.start();
 
-  eventBus.subscribe<{ userId: string }>("transfer.created", async (event) => {
-    await activity.invalidateUser(event.payload.userId);
-  });
-  eventBus.subscribe<{
-    userId: string;
-    transferId: string;
-    amount: number;
-    recipientName: string;
-  }>("transfer.settled", async (event) => {
-    await activity.invalidateUser(event.payload.userId);
-    await notifications.notifyTransferSettled(event.payload);
-  });
-  eventBus.subscribe<{
-    userId: string;
-    amount: number;
-    recipientName: string;
-    transferId: string;
-    error?: string;
-  }>("transfer.failed", async (event) => {
-    await activity.invalidateUser(event.payload.userId);
-    await notifications.notifyTransferFailed(event.payload);
-  });
-  eventBus.subscribe<{
-    userId: string;
-    transferId: string;
-    score: number;
-    flags: string[];
-  }>("transfer.flagged", async (event) => {
-    await activity.invalidateUser(event.payload.userId);
-    await notifications.notifyFraudFlagged(event.payload);
+  registerTransferEventHandlers({
+    eventBus,
+    activity,
+    compliance,
+    fraud,
+    notifications,
   });
   eventBus.subscribe<{ userId: string }>(
     "notification.created",
@@ -134,6 +112,7 @@ export function createContainer(): AppContainer {
       transfers,
       transferQueue,
       wallets,
+      countryMetadata,
       compliance,
       complianceLog,
       fraud,

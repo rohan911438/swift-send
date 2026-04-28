@@ -5,7 +5,7 @@ import type { JwtSessionPayload } from '../auth/sessionTypes';
 export default async function refundsRoutes(fastify: FastifyInstance) {
   fastify.get('/refunds', { preHandler: [requireVerifiedSession] }, async (req, reply) => {
     const user = req.user as JwtSessionPayload;
-    const userId = user.userId;
+    const userId = user.sub;
 
     try {
       const allTransfers = await fastify.container.services.transfers.listUserTransfers(userId);

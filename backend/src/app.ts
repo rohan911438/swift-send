@@ -8,6 +8,7 @@ import escrowRoutes from "./routes/escrow";
 import authRoutes from "./routes/auth";
 import activityRoutes from "./routes/activity";
 import adminRoutes from "./routes/admin";
+import countriesRoutes from "./routes/countries";
 import recurringPaymentRoutes from "./routes/recurringPayments";
 import contractRoutes from "./routes/contracts";
 import refundsRoutes from "./routes/refunds";
@@ -74,6 +75,7 @@ export async function buildApp() {
   await app.register(authRoutes, { prefix });
   await app.register(healthRoutes, { prefix });
   await app.register(activityRoutes, { prefix });
+  await app.register(countriesRoutes, { prefix });
   await app.register(transferRoutes, { prefix });
   await app.register(escrowRoutes, { prefix });
   await app.register(adminRoutes, { prefix });
