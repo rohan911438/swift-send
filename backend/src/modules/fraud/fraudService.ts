@@ -36,6 +36,7 @@ interface AssessTransferInput {
   destinationCountry?: string;
   recipientType: string;
   historicalTransfers: TransferRecord[];
+  ipAddress?: string;
 }
 
 export class FraudService {
@@ -57,6 +58,10 @@ export class FraudService {
       (record) => Math.abs(record.amount - input.amount) < 0.01,
     ).length;
     const recentFailures = last24Hours.filter((record) => record.state === 'failed').length;
+    const lastHour = input.historicalTransfers.filter(
+      (record) => now - new Date(record.createdAt).getTime() <= 60 * 60 * 1000,
+    );
+    const hourlyTransferCount = lastHour.length + 1;
 
     if (input.amount >= 1000) {
       score += 20;
@@ -95,6 +100,16 @@ export class FraudService {
 
     if (input.recipientType === 'cash_pickup') {
       score += 6;
+    }
+
+    if (hourlyTransferCount >= 3) {
+      score += 15;
+      flags.push({ code: 'high_hourly_frequency', label: 'High transfer frequency in one hour', severity: 'medium' });
+    }
+
+    if (input.amount > 5000) {
+      score += 25;
+      flags.push({ code: 'extreme_amount', label: 'Extremely large transfer amount', severity: 'high' });
     }
 
     const boundedScore = Math.min(score, 100);

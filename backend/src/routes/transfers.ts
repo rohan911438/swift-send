@@ -81,7 +81,7 @@ export default async function transferRoutes(fastify: FastifyInstance) {
       try {
         const session = requireTransferSession(req.user as JwtSessionPayload);
         verifySenderAuthenticity(body, session);
-        const command = mapRequestToCommand(body);
+        const command = mapRequestToCommand(body, req.ip);
         const simulation = await fastify.container.services.transfers.simulateTransfer(command);
         return {
           executable: simulation.executable,
@@ -123,7 +123,7 @@ export default async function transferRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const command = mapRequestToCommand(body);
+      const command = mapRequestToCommand(body, clientIp);
       fastify.container.services.transfers.validateCommand(command);
 
       const jobId = fastify.container.services.transferQueue.enqueue(command);
@@ -220,7 +220,7 @@ function requestPayloadForSigning(body: TransferRequest) {
   };
 }
 
-function mapRequestToCommand(body: TransferRequest): CreateTransferCommand {
+function mapRequestToCommand(body: TransferRequest, sourceIp?: string): CreateTransferCommand {
   const payload = requestPayloadForSigning(body);
   return {
     idempotencyKey: payload.idempotency_key,
@@ -247,6 +247,7 @@ function mapRequestToCommand(body: TransferRequest): CreateTransferCommand {
         }
       : undefined,
     metadata: payload.metadata,
+    sourceIp,
   };
 }
 
