@@ -1,4 +1,4 @@
-import { logger } from '../../logger';
+import { createLogger } from '../../logger';
 import type { TransferRecord } from '../transfers/domain';
 
 export type FraudSeverity = 'low' | 'medium' | 'high';
@@ -115,6 +115,7 @@ export class FraudService {
     assessment: FraudAssessment;
     recipientName: string;
   }) {
+    const logger = this.getLogger({ transferId: input.transferId, userId: input.userId });
     if (input.assessment.level === 'low' && input.assessment.flags.length === 0) {
       return;
     }
@@ -136,8 +137,6 @@ export class FraudService {
 
     logger.warn(
       {
-        transferId: input.transferId,
-        userId: input.userId,
         score: input.assessment.score,
         flags: input.assessment.flags.map((flag) => flag.code),
       },
@@ -149,5 +148,9 @@ export class FraudService {
     return this.auditLog
       .filter((entry) => !userId || entry.userId === userId)
       .slice(0, Math.max(0, limit));
+  }
+
+  private getLogger(context: Record<string, unknown>) {
+    return createLogger({ component: 'fraudService', ...context });
   }
 }

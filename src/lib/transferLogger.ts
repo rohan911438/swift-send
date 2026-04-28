@@ -7,10 +7,16 @@ export interface TransferLogEntry {
   timestamp: string;
   level: "info" | "warn" | "error" | "debug";
   event: string;
+  correlationId?: string;
+  component?: string;
   transferId?: string;
   userId?: string;
   amount?: number;
   currency?: string;
+  endpoint?: string;
+  attempt?: number;
+  durationMs?: number;
+  circuitState?: "closed" | "open" | "half-open";
   message?: string;
   error?: {
     category?: string;
@@ -141,6 +147,63 @@ class TransferLogger {
         statusCode,
       },
       metadata,
+    });
+  }
+
+  logApiRequest(
+    endpoint: string,
+    attempt: number,
+    correlationId: string,
+    metadata?: Record<string, unknown>,
+  ) {
+    this.log({
+      level: "debug",
+      event: "api_request",
+      correlationId,
+      component: "api",
+      endpoint,
+      attempt,
+      message: `API request attempt ${attempt} for ${endpoint}`,
+      metadata,
+    });
+  }
+
+  logApiRetry(
+    endpoint: string,
+    attempt: number,
+    correlationId: string,
+    message: string,
+    metadata?: Record<string, unknown>,
+  ) {
+    this.log({
+      level: "warn",
+      event: "api_retry",
+      correlationId,
+      component: "api",
+      endpoint,
+      attempt,
+      message,
+      metadata,
+    });
+  }
+
+  logCircuitState(
+    circuit: string,
+    state: "closed" | "open" | "half-open",
+    correlationId: string,
+    metadata?: Record<string, unknown>,
+  ) {
+    this.log({
+      level: state === "open" ? "error" : "info",
+      event: "circuit_state_change",
+      correlationId,
+      component: "resilience",
+      circuitState: state,
+      message: `Circuit ${circuit} is now ${state}`,
+      metadata: {
+        circuit,
+        ...metadata,
+      },
     });
   }
 
@@ -280,9 +343,15 @@ class TransferLogger {
       timestamp: entry.timestamp,
       transferId: entry.transferId,
       userId: entry.userId,
+      correlationId: entry.correlationId,
+      component: entry.component,
       message: entry.message,
       error: entry.error,
       metadata: entry.metadata,
+      endpoint: entry.endpoint,
+      attempt: entry.attempt,
+      durationMs: entry.durationMs,
+      circuitState: entry.circuitState,
     });
   }
 

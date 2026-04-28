@@ -1,9 +1,12 @@
 import { config } from '../../config';
+import { createLogger } from '../../logger';
 import { ComplianceService } from '../compliance/complianceService';
 import { WalletService } from '../wallets/walletService';
+import { getCircuitBreaker } from '../../utils/resilience';
 
 export class SystemHealthService {
   constructor(private readonly compliance: ComplianceService, private readonly wallets: WalletService) {}
+  private readonly logger = createLogger({ component: 'systemHealthService' });
   private readinessCache?: {
     expiresAt: number;
     stellar: {
@@ -45,11 +48,21 @@ export class SystemHealthService {
     const controller = new AbortController();
     const startedAt = Date.now();
     const timeout = setTimeout(() => controller.abort(), 3000);
+    const horizonBreaker = getCircuitBreaker('stellar-horizon-health', {
+      failureThreshold: 3,
+      resetTimeoutMs: 15_000,
+    });
 
     try {
-      const response = await fetch(config.stellar.horizonUrl, {
-        method: 'GET',
-        signal: controller.signal,
+      const response = await horizonBreaker.execute(async () => {
+        const result = await fetch(config.stellar.horizonUrl, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        if (!result.ok) {
+          throw new Error(`Horizon responded with ${result.status}`);
+        }
+        return result;
       });
       const latencyMs = Date.now() - startedAt;
 
@@ -62,6 +75,7 @@ export class SystemHealthService {
         expiresAt: Date.now() + config.performance.healthCacheTtlMs,
         stellar,
       };
+      this.logger.info({ latencyMs, status: stellar.status }, 'stellar health checked');
       return stellar;
     } catch {
       const stellar = {
@@ -73,6 +87,7 @@ export class SystemHealthService {
         expiresAt: Date.now() + config.performance.healthCacheTtlMs,
         stellar,
       };
+      this.logger.warn('stellar health unavailable');
       return stellar;
     } finally {
       clearTimeout(timeout);

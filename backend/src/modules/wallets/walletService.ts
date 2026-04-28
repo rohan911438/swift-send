@@ -1,6 +1,6 @@
 import { ValidationError, NotFoundError } from '../../errors';
 import { adjustSessionUserBalance, getSessionUserBalance } from '../../auth/sessionStore';
-import { logger } from '../../logger';
+import { createLogger } from '../../logger';
 import { postEntry } from '../../services/ledger';
 import { submitPayment } from '../../services/stellarAdapter';
 import { StrKey } from '@stellar/stellar-sdk';
@@ -33,6 +33,7 @@ export interface SettlementRequest {
 
 export class WalletService {
   async reserveFunds(request: ReserveFundsRequest): Promise<EscrowEntry> {
+    const logger = this.getLogger({ transferId: request.transferId, userId: request.userId });
     if (!request.amount || request.amount <= 0) {
       throw new ValidationError('Amount must be greater than zero');
     }
@@ -64,6 +65,7 @@ export class WalletService {
   }
 
   async settleEscrow(request: SettlementRequest) {
+    const logger = this.getLogger({ transferId: request.transferId, userId: request.userId });
     const escrow = await getEscrowEntry(request.transferId);
     if (!escrow) throw new NotFoundError(`Escrow not found for transfer '${request.transferId}'`);
     if (escrow.status !== 'held') {
@@ -85,9 +87,16 @@ export class WalletService {
           request.currency
         );
         request.metadata = { ...(request.metadata || {}), stellar: { hash: stellarResult.networkId, attempt: stellarResult.attempt } };
+        logger.info(
+          { destination: request.destinationAccount, attempt: stellarResult.attempt },
+          'stellar payment submitted',
+        );
       } catch (err: unknown) {
         // Surface a structured error and avoid releasing escrow if the network submission failed.
-        logger.error({ transferId: request.transferId, err }, 'stellar submission failed');
+        logger.error(
+          { destination: request.destinationAccount, error: err instanceof Error ? err.message : String(err) },
+          'stellar submission failed',
+        );
         throw err;
       }
     }
@@ -106,6 +115,7 @@ export class WalletService {
   }
 
   async refundEscrow(request: SettlementRequest) {
+    const logger = this.getLogger({ transferId: request.transferId, userId: request.userId });
     const escrow = await getEscrowEntry(request.transferId);
     if (!escrow) throw new NotFoundError(`Escrow not found for transfer '${request.transferId}'`);
     if (!['held', 'disputed'].includes(escrow.status)) {
@@ -139,6 +149,10 @@ export class WalletService {
 
   async getEscrow(transferId: string) {
     return getEscrowEntry(transferId);
+  }
+
+  private getLogger(context: Record<string, unknown>) {
+    return createLogger({ component: 'walletService', ...context });
   }
 
   private ensureSufficientBalance(userId: string | undefined, amount: number) {
