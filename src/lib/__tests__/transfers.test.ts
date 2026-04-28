@@ -1,4 +1,10 @@
-import { canonicalizeTransferPayload, createTransfer, checkTransferQueueStatus } from '../transfers';
+import {
+  canonicalizeTransferPayload,
+  createTransfer,
+  checkTransferQueueStatus,
+  simulateTransfer,
+  fetchTransferFeeEstimate,
+} from '../transfers';
 import type { TransferCreatePayload } from '../transfers';
 import { apiFetch } from '../api';
 
@@ -233,6 +239,77 @@ describe('Transfer Logic', () => {
 
       expect(result.status).toBe('failed');
       expect(result.error).toBe('Network timeout');
+    });
+  });
+
+  describe('simulateTransfer', () => {
+    it('should return simulation result successfully', async () => {
+      const mockSimulation = {
+        executable: true,
+        expected_status: 'submitted',
+        fees: {
+          network_fee: 0.00001,
+          service_fee: 0.5,
+          total_fee: 0.50001,
+        },
+        recipient_gets: 99.4999,
+        warnings: [],
+        compliance: {
+          tier: 'basic',
+          can_proceed: true,
+        },
+      };
+
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(mockSimulation),
+      } as any);
+
+      const result = await simulateTransfer({
+        idempotency_key: 'simulate-1',
+        from_wallet_id: 'wallet-1',
+        user_id: 'user-1',
+        amount: 100,
+        currency: 'USDC',
+        recipient: {
+          type: 'wallet',
+          wallet_public_key: 'GTEST...',
+        },
+      });
+
+      expect(result).toEqual(mockSimulation);
+      expect(mockApiFetch).toHaveBeenCalledWith('/transfers/simulate', {
+        method: 'POST',
+        body: expect.any(String),
+      });
+    });
+  });
+
+  describe('fetchTransferFeeEstimate', () => {
+    it('should return fee estimate successfully', async () => {
+      const mockEstimate = {
+        amount: 100,
+        network_fee: 0.00001,
+        service_fee: 0.5,
+        total_fee: 0.50001,
+        recipient_gets: 99.4999,
+        fee_percentage: 0.5,
+        optimization: {
+          queue_length: 2,
+          load_multiplier: 1,
+          optimized: false,
+        },
+      };
+
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(mockEstimate),
+      } as any);
+
+      const result = await fetchTransferFeeEstimate(100);
+
+      expect(result).toEqual(mockEstimate);
+      expect(mockApiFetch).toHaveBeenCalledWith('/transfers/fee-estimate?amount=100');
     });
   });
 });
