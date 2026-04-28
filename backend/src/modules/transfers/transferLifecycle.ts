@@ -67,6 +67,7 @@ export class TransferLifecycle {
     }
 
     const now = new Date().toISOString();
+    const multisig = this.normalizeMultisig(command);
     const transfer: TransferRecord = {
       id: command.idempotencyKey,
       clientReference: command.idempotencyKey,
@@ -79,11 +80,34 @@ export class TransferLifecycle {
       statusHistory: [{ state: 'created', at: now }],
       compliance: enrichedCompliance,
       fraud: fraudAssessment,
+      multisig,
       processingAttempts: 0,
       metadata: command.metadata,
       createdAt: now,
       updatedAt: now,
     };
+
+    if (transfer.multisig && transfer.multisig.approvals.length < transfer.multisig.threshold) {
+      this.appendStatus(
+        transfer,
+        'awaiting_multisig',
+        `Waiting for ${transfer.multisig.threshold} approvals from ${transfer.multisig.signers.length} signers`,
+      );
+      await this.repository.save(transfer);
+      await this.eventBus.publish({
+        type: 'transfer.created',
+        timestamp: new Date().toISOString(),
+        payload: {
+          userId: transfer.userId,
+          transferId: transfer.id,
+          amount: transfer.amount,
+          currency: transfer.currency,
+          recipientName: this.recipientName(transfer),
+          status: 'awaiting_multisig',
+        },
+      });
+      return transfer;
+    }
 
     this.appendStatus(transfer, 'validated', enrichedCompliance.warnings.join(', ') || undefined);
 
@@ -149,6 +173,52 @@ export class TransferLifecycle {
     return this.repository.findById(id);
   }
 
+  async simulateTransfer(command: CreateTransferCommand) {
+    this.validateCommand(command);
+    const complianceDecision = await this.compliance.evaluateTransfer({
+      userId: command.userId,
+      amount: command.amount,
+      currency: command.currency,
+      destinationCountry: command.recipient.country,
+      tierId: command.complianceTier,
+    });
+
+    const fees = this.computeFees(command.amount);
+    const warnings = [...complianceDecision.warnings];
+
+    const multisig = this.normalizeMultisig(command);
+    if (multisig && multisig.approvals.length < multisig.threshold) {
+      warnings.push(
+        `Multisig approvals pending: ${multisig.approvals.length}/${multisig.threshold}`,
+      );
+    }
+
+    return {
+      executable:
+        complianceDecision.canProceed &&
+        (!multisig || multisig.approvals.length >= multisig.threshold),
+      expected_status:
+        multisig && multisig.approvals.length < multisig.threshold
+          ? ('awaiting_multisig' as const)
+          : ('submitted' as const),
+      fees,
+      recipient_gets: roundTo(command.amount - fees.total_fee, 4),
+      warnings,
+      compliance: {
+        tier: complianceDecision.tier.id,
+        can_proceed: complianceDecision.canProceed,
+      },
+      multisig: multisig
+        ? {
+            threshold: multisig.threshold,
+            signers: multisig.signers,
+            approvals_count: multisig.approvals.length,
+            approvals_required: Math.max(0, multisig.threshold - multisig.approvals.length),
+          }
+        : undefined,
+    };
+  }
+
   public validateCommand(command: CreateTransferCommand) {
     if (!command.idempotencyKey) {
       throw new ValidationError('idempotency_key is required');
@@ -183,6 +253,26 @@ export class TransferLifecycle {
     ) {
       throw new ValidationError('Cash pickup recipient must have partnerCode and country');
     }
+    if (command.multisig) {
+      if (!command.multisig.signers.length) {
+        throw new ValidationError('multisig.signers must include at least one signer');
+      }
+      if (command.multisig.threshold < 2) {
+        throw new ValidationError('multisig.threshold must be at least 2');
+      }
+      if (command.multisig.threshold > command.multisig.signers.length) {
+        throw new ValidationError('multisig.threshold cannot exceed signer count');
+      }
+      const allowed = new Set(command.multisig.signers);
+      const approvals = command.multisig.approvals || [];
+      approvals.forEach((approval) => {
+        if (!allowed.has(approval.approverWalletId)) {
+          throw new ValidationError(
+            `multisig approval signer not allowed: ${approval.approverWalletId}`,
+          );
+        }
+      });
+    }
   }
 
   private appendStatus(transfer: TransferRecord, state: TransferState, notes?: string) {
@@ -200,6 +290,33 @@ export class TransferLifecycle {
   private recipientName(transfer: TransferRecord) {
     const maybeName = transfer.recipient.metadata?.name;
     return typeof maybeName === 'string' && maybeName.length > 0 ? maybeName : 'Recipient';
+  }
+
+  private normalizeMultisig(command: CreateTransferCommand) {
+    if (!command.multisig) {
+      return undefined;
+    }
+    const approvals = command.multisig.approvals || [];
+    return {
+      threshold: command.multisig.threshold,
+      signers: command.multisig.signers,
+      approvals: approvals.map((approval) => ({
+        approverWalletId: approval.approverWalletId,
+        signature: approval.signature,
+        approvedAt: new Date().toISOString(),
+      })),
+    };
+  }
+
+  private computeFees(amount: number) {
+    const baseNetworkFee = 0.00001;
+    const baseServiceRate = 0.005;
+    const serviceFee = Math.min(Math.max(amount * baseServiceRate, 0.01), 25);
+    return {
+      network_fee: roundTo(baseNetworkFee, 5),
+      service_fee: roundTo(serviceFee, 4),
+      total_fee: roundTo(baseNetworkFee + serviceFee, 4),
+    };
   }
 
   private async settleTransfer(transferId: string) {
@@ -224,6 +341,8 @@ export class TransferLifecycle {
         metadata: { delivery: transfer.recipient.type },
       });
 
+      this.appendStatus(transfer, 'submitted');
+      transfer.transactionHash = this.resolveTransactionHash(transfer);
       this.appendStatus(transfer, 'settled');
       transfer.processingAttempts += 1;
       await this.repository.update(transfer);
@@ -286,57 +405,15 @@ export class TransferLifecycle {
     }
   }
 
-  private enforceVelocityLimits(
-    command: CreateTransferCommand,
-    tier: { maxTransactionsPerMinute: number; maxTransactionsPerHour: number },
-    historicalTransfers: TransferRecord[],
-    transferLogger: ReturnType<typeof createLogger>,
-  ) {
-    const now = Date.now();
-    const recentMinute = historicalTransfers.filter(
-      (record) => now - new Date(record.createdAt).getTime() <= 60 * 1000,
-    );
-    const recentHour = historicalTransfers.filter(
-      (record) => now - new Date(record.createdAt).getTime() <= 60 * 60 * 1000,
-    );
-
-    const minuteCount = recentMinute.length + 1;
-    const hourCount = recentHour.length + 1;
-
-    if (minuteCount > tier.maxTransactionsPerMinute) {
-      transferLogger.warn(
-        {
-          minuteCount,
-          maxTransactionsPerMinute: tier.maxTransactionsPerMinute,
-        },
-        'transfer blocked by minute velocity limit',
-      );
-      throw new ValidationError('Transfer velocity limit exceeded', {
-        window: 'minute',
-        currentCount: minuteCount,
-        limit: tier.maxTransactionsPerMinute,
-        userId: command.userId,
-      });
+  private resolveTransactionHash(transfer: TransferRecord) {
+    const externalTxHash = transfer.metadata?.externalWalletTxHash;
+    if (typeof externalTxHash === 'string' && externalTxHash.length > 0) {
+      return externalTxHash;
     }
-
-    if (hourCount > tier.maxTransactionsPerHour) {
-      transferLogger.warn(
-        {
-          hourCount,
-          maxTransactionsPerHour: tier.maxTransactionsPerHour,
-        },
-        'transfer blocked by hourly velocity limit',
-      );
-      throw new ValidationError('Transfer velocity limit exceeded', {
-        window: 'hour',
-        currentCount: hourCount,
-        limit: tier.maxTransactionsPerHour,
-        userId: command.userId,
-      });
-    }
+    return `sim_${transfer.id}_${Date.now().toString(16)}`;
   }
+}
 
-  private getLogger(context: Record<string, unknown>) {
-    return createLogger({ component: 'transferLifecycle', ...context });
-  }
+function roundTo(value: number, places: number) {
+  return Number(value.toFixed(places));
 }

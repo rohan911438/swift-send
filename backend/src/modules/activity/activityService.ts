@@ -23,6 +23,8 @@ export interface ActivityTransactionDto {
   destinationCurrency?: string;
   category?: string;
   notes?: string;
+  txHash?: string;
+  explorerUrl?: string;
   risk?: {
     score: number;
     level: 'low' | 'medium' | 'high';
@@ -478,6 +480,10 @@ export class ActivityService {
       destinationCurrency,
       category: getCategory(record, destinationCurrency),
       notes: record.lastError || record.statusHistory[record.statusHistory.length - 1]?.notes,
+      txHash: record.transactionHash,
+      explorerUrl: record.transactionHash
+        ? `https://stellar.expert/explorer/public/tx/${record.transactionHash}`
+        : undefined,
       risk: record.fraud
         ? {
             score: record.fraud.score,

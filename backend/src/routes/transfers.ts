@@ -21,6 +21,15 @@ interface TransferRequest {
     metadata?: Record<string, unknown>;
   };
   compliance_tier?: string;
+  multisig?: {
+    enabled?: boolean;
+    threshold?: number;
+    signers?: string[];
+    approvals?: Array<{
+      approver_wallet_id: string;
+      signature?: string;
+    }>;
+  };
   metadata?: Record<string, unknown>;
 }
 
@@ -29,16 +38,24 @@ const SERVICE_FEE_RATE = 0.005;
 const MIN_SERVICE_FEE = 0.01;
 const MAX_SERVICE_FEE = 25.0;
 
-function computeFeeEstimate(amount: number) {
-  const serviceFee = Math.min(Math.max(amount * SERVICE_FEE_RATE, MIN_SERVICE_FEE), MAX_SERVICE_FEE);
-  const totalFee = NETWORK_FEE + serviceFee;
+function computeFeeEstimate(amount: number, queueLength = 0) {
+  const loadMultiplier = queueLength >= 25 ? 1.5 : queueLength >= 10 ? 1.25 : queueLength >= 5 ? 1.1 : 1;
+  const adjustedNetworkFee = NETWORK_FEE * loadMultiplier;
+  const adjustedServiceRate = SERVICE_FEE_RATE * (0.95 + (loadMultiplier - 1) * 0.4);
+  const serviceFee = Math.min(Math.max(amount * adjustedServiceRate, MIN_SERVICE_FEE), MAX_SERVICE_FEE);
+  const totalFee = adjustedNetworkFee + serviceFee;
   return {
     amount: parseFloat(amount.toFixed(4)),
-    network_fee: NETWORK_FEE,
+    network_fee: parseFloat(adjustedNetworkFee.toFixed(5)),
     service_fee: parseFloat(serviceFee.toFixed(4)),
     total_fee: parseFloat(totalFee.toFixed(4)),
     recipient_gets: parseFloat(Math.max(0, amount - totalFee).toFixed(4)),
     fee_percentage: parseFloat(((totalFee / amount) * 100).toFixed(4)),
+    optimization: {
+      queue_length: queueLength,
+      load_multiplier: parseFloat(loadMultiplier.toFixed(2)),
+      optimized: loadMultiplier > 1,
+    },
   };
 }
 
@@ -52,8 +69,37 @@ export default async function transferRoutes(fastify: FastifyInstance) {
     if (amount > 1_000_000) {
       return reply.status(400).send({ error: 'amount exceeds maximum limit' });
     }
-    return computeFeeEstimate(amount);
+    const queueStats = fastify.container.services.transferQueue.getQueueStats();
+    return computeFeeEstimate(amount, queueStats.queueLength);
   });
+
+  fastify.post(
+    '/transfers/simulate',
+    { preHandler: [requireVerifiedSession, requireAccessGuard] },
+    async (req, reply) => {
+      const body = req.body as TransferRequest;
+      try {
+        const session = requireTransferSession(req.user as JwtSessionPayload);
+        verifySenderAuthenticity(body, session);
+        const command = mapRequestToCommand(body);
+        const simulation = await fastify.container.services.transfers.simulateTransfer(command);
+        return {
+          executable: simulation.executable,
+          expected_status: simulation.expected_status,
+          fees: simulation.fees,
+          recipient_gets: simulation.recipient_gets,
+          warnings: simulation.warnings,
+          compliance: simulation.compliance,
+          multisig: simulation.multisig,
+        };
+      } catch (err: unknown) {
+        const statusCode = err instanceof ValidationError ? err.statusCode : 400;
+        const errorMessage = err instanceof Error ? err.message : 'transfer simulation failed';
+        const details = err instanceof ValidationError ? err.details : undefined;
+        return reply.status(statusCode).send({ error: errorMessage, details });
+      }
+    },
+  );
 
   fastify.post('/transfers', { preHandler: [requireVerifiedSession, requireAccessGuard] }, async (req, reply) => {
     const body = req.body as TransferRequest;
@@ -148,6 +194,13 @@ function requestPayloadForSigning(body: TransferRequest) {
       metadata: body.recipient?.metadata,
     },
     compliance_tier: body.compliance_tier,
+    multisig: body.multisig?.enabled
+      ? {
+          threshold: body.multisig.threshold,
+          signers: body.multisig.signers,
+          approvals: body.multisig.approvals,
+        }
+      : undefined,
     metadata: body.metadata,
   };
 }
@@ -168,6 +221,16 @@ function mapRequestToCommand(body: TransferRequest): CreateTransferCommand {
       metadata: payload.recipient.metadata,
     },
     complianceTier: payload.compliance_tier as CreateTransferCommand['complianceTier'],
+    multisig: payload.multisig
+      ? {
+          threshold: payload.multisig.threshold || 0,
+          signers: payload.multisig.signers || [],
+          approvals: (payload.multisig.approvals || []).map((approval) => ({
+            approverWalletId: approval.approver_wallet_id,
+            signature: approval.signature,
+          })),
+        }
+      : undefined,
     metadata: payload.metadata,
   };
 }
@@ -196,6 +259,17 @@ function formatTransferResponse(record: TransferRecord) {
         }
       : undefined,
     history: record.statusHistory,
+    transaction_hash: record.transactionHash,
+    explorer_url: record.transactionHash
+      ? `https://stellar.expert/explorer/public/tx/${record.transactionHash}`
+      : undefined,
+    multisig: record.multisig
+      ? {
+          threshold: record.multisig.threshold,
+          signers: record.multisig.signers,
+          approvals: record.multisig.approvals,
+        }
+      : undefined,
     last_error: record.lastError,
     available_balance: getSessionUserBalance(record.userId),
     created_at: record.createdAt,
@@ -214,6 +288,16 @@ function formatTransferResponse(record: TransferRecord) {
         metadata: record.recipient.metadata,
       },
       compliance_tier: record.compliance.tier.id,
+      multisig: record.multisig
+        ? {
+            threshold: record.multisig.threshold,
+            signers: record.multisig.signers,
+            approvals: record.multisig.approvals.map((approval) => ({
+              approver_wallet_id: approval.approverWalletId,
+              signature: approval.signature,
+            })),
+          }
+        : undefined,
       metadata: record.metadata,
     }),
   };
