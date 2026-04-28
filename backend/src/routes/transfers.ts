@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { ValidationError } from '../errors';
-import { getSession, getSessionUserBalance } from '../auth/sessionStore';
+import { getSession, getSessionUserBalance, isIpTrusted, updateLastKnownIp } from '../auth/sessionStore';
 import type { JwtSessionPayload, Session } from '../auth/sessionTypes';
 import { CreateTransferCommand, TransferRecord } from '../modules/transfers/domain';
 import { canonicalizeSignedTransferPayload } from '../modules/transfers/requestSigning';
@@ -107,6 +107,21 @@ export default async function transferRoutes(fastify: FastifyInstance) {
       const payload = requestPayloadForSigning(body);
       const session = requireTransferSession(req.user as JwtSessionPayload);
       verifySenderAuthenticity(body, session);
+
+      // IP Whitelisting for sensitive actions
+      const clientIp = req.ip;
+      updateLastKnownIp(session.id, clientIp);
+      
+      if (body.amount > 500 && !isIpTrusted(session.id, clientIp)) {
+        return reply.status(403).send({
+          error: 'Action requires verification',
+          code: 'new_ip_detected',
+          details: {
+            message: 'This large transfer is from a new IP address. Please verify your identity.',
+            ip: clientIp,
+          }
+        });
+      }
 
       const command = mapRequestToCommand(body);
       fastify.container.services.transfers.validateCommand(command);

@@ -133,6 +133,7 @@ export function createMariaSession(): Session {
     metadata: {
       createdAt: now,
       lastActivityAt: now,
+      trustedIps: ['127.0.0.1'],
     },
     expiresAt: now + config.auth.jwtExpiresSeconds * 1000,
   };
@@ -153,6 +154,7 @@ export function createNewUserSession(email: string | undefined, phone: string | 
     metadata: {
       createdAt: now,
       lastActivityAt: now,
+      trustedIps: [],
     },
     expiresAt: now + config.auth.jwtExpiresSeconds * 1000,
   };
@@ -166,4 +168,26 @@ function isSessionExpired(session: Session): boolean {
     return true;
   }
   return now - session.metadata.lastActivityAt > SESSION_INACTIVITY_TIMEOUT_MS;
+}
+
+export function isIpTrusted(sessionId: string, ip: string): boolean {
+  const session = sessions.get(sessionId);
+  if (!session) return false;
+  return session.metadata.trustedIps.includes(ip);
+}
+
+export function trustIp(sessionId: string, ip: string): void {
+  const session = sessions.get(sessionId);
+  if (session && !session.metadata.trustedIps.includes(ip)) {
+    session.metadata.trustedIps.push(ip);
+    saveSession(session);
+  }
+}
+
+export function updateLastKnownIp(sessionId: string, ip: string): void {
+  const session = sessions.get(sessionId);
+  if (session) {
+    session.metadata.lastKnownIp = ip;
+    saveSession(session);
+  }
 }

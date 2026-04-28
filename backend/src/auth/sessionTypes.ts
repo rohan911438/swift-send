@@ -19,6 +19,8 @@ export type UserRole = 'admin' | 'user';
 export interface SessionMetadata {
   createdAt: number;
   lastActivityAt: number;
+  trustedIps: string[];
+  lastKnownIp?: string;
 }
 
 export interface Session {
