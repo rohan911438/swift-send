@@ -183,6 +183,96 @@ describe('Transfer Routes', () => {
         .send(invalidWalletPayload)
         .expect(400);
     });
+
+    it('should reject invalid multisig threshold', async () => {
+      const authToken = app.jwt.sign({
+        sub: 'user-1',
+        verified: true
+      });
+
+      const invalidMultisigPayload = {
+        ...validTransferPayload,
+        idempotency_key: 'test-invalid-multisig-threshold',
+        multisig: {
+          enabled: true,
+          threshold: 3,
+          signers: ['wallet-1', 'wallet-2'],
+          approvals: [{ approver_wallet_id: 'wallet-1' }],
+        },
+      };
+
+      await request
+        .post('/transfers')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send(invalidMultisigPayload)
+        .expect(400);
+    });
+  });
+
+  describe('GET /transfers/fee-estimate', () => {
+    it('should return optimized fee estimate', async () => {
+      const response = await request
+        .get('/transfers/fee-estimate?amount=100')
+        .expect(200);
+
+      expect(response.body).toHaveProperty('network_fee');
+      expect(response.body).toHaveProperty('service_fee');
+      expect(response.body).toHaveProperty('optimization');
+      expect(response.body.optimization).toHaveProperty('queue_length');
+      expect(response.body.optimization).toHaveProperty('load_multiplier');
+    });
+
+    it('should reject invalid amount', async () => {
+      await request
+        .get('/transfers/fee-estimate?amount=-1')
+        .expect(400);
+    });
+  });
+
+  describe('POST /transfers/simulate', () => {
+    it('should simulate transfer successfully', async () => {
+      const authToken = app.jwt.sign({
+        sub: 'user-1',
+        verified: true
+      });
+
+      const response = await request
+        .post('/transfers/simulate')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send(validTransferPayload)
+        .expect(200);
+
+      expect(response.body).toHaveProperty('executable');
+      expect(response.body).toHaveProperty('expected_status');
+      expect(response.body).toHaveProperty('fees');
+      expect(response.body).toHaveProperty('recipient_gets');
+    });
+
+    it('should return awaiting_multisig for partial approvals', async () => {
+      const authToken = app.jwt.sign({
+        sub: 'user-1',
+        verified: true
+      });
+
+      const response = await request
+        .post('/transfers/simulate')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({
+          ...validTransferPayload,
+          idempotency_key: 'simulate-multisig',
+          multisig: {
+            enabled: true,
+            threshold: 2,
+            signers: ['wallet-1', 'wallet-2'],
+            approvals: [{ approver_wallet_id: 'wallet-1' }],
+          },
+        })
+        .expect(200);
+
+      expect(response.body.expected_status).toBe('awaiting_multisig');
+      expect(response.body.multisig).toHaveProperty('approvals_required');
+      expect(response.body.executable).toBe(false);
+    });
   });
 
   describe('GET /transfers/:id/status', () => {

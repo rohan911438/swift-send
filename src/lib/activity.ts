@@ -22,6 +22,8 @@ interface TransactionsResponseDto {
     destinationCurrency?: string;
     category?: string;
     notes?: string;
+    txHash?: string;
+    explorerUrl?: string;
     risk?: {
       score: number;
       level: 'low' | 'medium' | 'high';
@@ -183,6 +185,8 @@ function parseTransactionDto(dto: TransactionsResponseDto['items'][number]): Tra
     destinationCurrency: dto.destinationCurrency,
     category: dto.category,
     notes: dto.notes,
+    txHash: dto.txHash,
+    explorerUrl: dto.explorerUrl,
     risk: dto.risk ? parseRiskSummary(dto.risk) : undefined,
   };
 }

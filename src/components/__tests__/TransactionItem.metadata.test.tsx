@@ -91,4 +91,19 @@ describe('TransactionItem detailed metadata (#92)', () => {
     expect(block).toHaveTextContent('1 USDC = 1.0824 EUR');
     expect(block).toHaveTextContent('EUR');
   });
+
+  it('shows explorer link when tx hash exists', () => {
+    render(
+      <TransactionItem
+        transaction={buildTransaction({
+          txHash: 'abc123hashxyz987654',
+        })}
+        showDetailedView
+        senderName="Sender"
+      />,
+    );
+
+    expect(screen.getByText('Open in Stellar Explorer')).toBeInTheDocument();
+    expect(screen.getByText(/Hash:/)).toBeInTheDocument();
+  });
 });

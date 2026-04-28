@@ -22,6 +22,15 @@ export interface TransferCreatePayload {
     metadata?: Record<string, unknown>;
   };
   compliance_tier?: string;
+  multisig?: {
+    enabled?: boolean;
+    threshold?: number;
+    signers?: string[];
+    approvals?: Array<{
+      approver_wallet_id: string;
+      signature?: string;
+    }>;
+  };
   metadata?: Record<string, unknown>;
 }
 
@@ -44,6 +53,42 @@ export interface QueueJobStatus {
   created_at: string;
   started_at?: string;
   completed_at?: string;
+}
+
+export interface TransferFeeEstimate {
+  amount: number;
+  network_fee: number;
+  service_fee: number;
+  total_fee: number;
+  recipient_gets: number;
+  fee_percentage: number;
+  optimization?: {
+    queue_length: number;
+    load_multiplier: number;
+    optimized: boolean;
+  };
+}
+
+export interface TransferSimulationResult {
+  executable: boolean;
+  expected_status: 'awaiting_multisig' | 'submitted';
+  fees: {
+    network_fee: number;
+    service_fee: number;
+    total_fee: number;
+  };
+  recipient_gets: number;
+  warnings: string[];
+  compliance: {
+    tier: string;
+    can_proceed: boolean;
+  };
+  multisig?: {
+    threshold: number;
+    signers: string[];
+    approvals_count: number;
+    approvals_required: number;
+  };
 }
 
 function sortValue(value: JsonLike): JsonLike {
@@ -138,4 +183,43 @@ export async function checkTransferQueueStatus(
   }
 
   return body as QueueJobStatus;
+}
+
+export async function simulateTransfer(
+  payload: TransferCreatePayload,
+): Promise<TransferSimulationResult> {
+  const response = await apiFetch('/transfers/simulate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = {};
+  }
+
+  if (!response.ok) {
+    const errorBody = body as { error?: string };
+    throw new Error(errorBody.error || 'Failed to simulate transfer');
+  }
+
+  return body as TransferSimulationResult;
+}
+
+export async function fetchTransferFeeEstimate(amount: number): Promise<TransferFeeEstimate> {
+  const response = await apiFetch(`/transfers/fee-estimate?amount=${amount}`);
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = {};
+  }
+
+  if (!response.ok) {
+    const errorBody = body as { error?: string };
+    throw new Error(errorBody.error || 'Failed to fetch fee estimate');
+  }
+
+  return body as TransferFeeEstimate;
 }

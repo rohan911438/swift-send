@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,14 @@ import { useCountryInfo } from '@/hooks/useCountryInfo';
 import { Contact, TransactionPreview } from '@/types';
 import { ArrowLeft, ArrowRight, Search, DollarSign, Send, CheckCircle2, UserPlus, Mail, Phone, MessageCircle, Shield, Zap, Globe2, Star, Wallet, MapPin, AlertTriangle, CloudOff } from 'lucide-react';
 import { toast } from 'sonner';
-import { createTransfer } from '@/services/transfers';
+import {
+  createTransfer,
+  fetchTransferFeeEstimate,
+  simulateTransfer,
+  type TransferCreatePayload,
+  type TransferFeeEstimate,
+  type TransferSimulationResult,
+} from '@/services/transfers';
 import { formatDeliveryEstimate } from '@/lib/countryTransferHelpers';
 
 type Step = 'recipient' | 'amount' | 'confirm' | 'pin' | 'processing' | 'success';
@@ -93,6 +100,9 @@ export default function SendMoney() {
   const [pin, setPin] = useState(['', '', '', '']);
   const [transactionPin, setTransactionPin] = useState<string | null>(null);
   const [showPinSetup, setShowPinSetup] = useState(false);
+  const [feeEstimate, setFeeEstimate] = useState<TransferFeeEstimate | null>(null);
+  const [simulationResult, setSimulationResult] = useState<TransferSimulationResult | null>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
   const pinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const { rates, convert } = useExchangeRate();
   const { data: countryInfo, isLoading: countryInfoLoading, isError: countryInfoError } = useCountryInfo(selectedContact?.countryCode ?? null);
@@ -143,8 +153,42 @@ export default function SendMoney() {
   const convertedAmount = useMemo(() => convert(amountValue, recipientCurrency), [amountValue, recipientCurrency, convert]);
 
   const fees = useMemo(() => {
+    if (feeEstimate) {
+      return {
+        networkFee: feeEstimate.network_fee,
+        serviceFee: feeEstimate.service_fee,
+        totalFee: feeEstimate.total_fee,
+        recipientGets: feeEstimate.recipient_gets,
+      };
+    }
     return calculateFees(amountValue);
+  }, [amountValue, feeEstimate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!amountValue || amountValue <= 0) {
+      setFeeEstimate(null);
+      return;
+    }
+    fetchTransferFeeEstimate(amountValue)
+      .then((estimate) => {
+        if (!cancelled) {
+          setFeeEstimate(estimate);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFeeEstimate(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [amountValue]);
+
+  useEffect(() => {
+    setSimulationResult(null);
+  }, [amountValue, selectedContact?.id, newRecipient?.identifier]);
 
   const amountError = useMemo(() => {
     if (!amount.trim()) return "Amount is required";
@@ -167,6 +211,81 @@ export default function SendMoney() {
       return "Enter a valid email or international phone number";
     return null;
   }, [isValidRecipientInput, recipientInput]);
+
+  const multisigConfig = useMemo(() => {
+    if (!user) {
+      return undefined;
+    }
+    if (amountValue < 1000) {
+      return undefined;
+    }
+    const primarySigner = user.walletAddress || user.id;
+    return {
+      enabled: true,
+      threshold: 2,
+      signers: [primarySigner, 'swiftsend_guardian_signer'],
+      approvals: [{ approver_wallet_id: primarySigner }],
+    };
+  }, [amountValue, user]);
+
+  const buildTransferPayload = useCallback(
+    (extraMetadata?: Record<string, unknown>): TransferCreatePayload => {
+      if (!user) {
+        throw new Error("You must be signed in to send money");
+      }
+      const recipientName =
+        selectedContact?.name || newRecipient?.name || "Recipient";
+      const recipientIdentifier =
+        selectedContact?.phone || newRecipient?.identifier || "";
+      const recipientCountry = selectedContact?.countryCode || "US";
+      const partnerCode =
+        selectedCashOutMethod?.partnerName ??
+        CASH_PICKUP_PARTNER_BY_COUNTRY[recipientCountry] ??
+        "MONEYGRAM";
+      const destinationCurrency =
+        countryInfo?.currencyCode ??
+        DESTINATION_CURRENCY_BY_COUNTRY[recipientCountry] ??
+        "USD";
+
+      return {
+        idempotency_key: `transfer_${Date.now()}`,
+        from_wallet_id: user.walletAddress || user.id,
+        user_id: user.id,
+        amount: amountValue,
+        currency: "USDC",
+        recipient: {
+          type: "cash_pickup",
+          country: recipientCountry,
+          partner_code: partnerCode,
+          metadata: {
+            identifier: recipientIdentifier,
+            name: recipientName,
+            source: newRecipient ? newRecipient.type : "recent_contact",
+            destination_currency: destinationCurrency,
+          },
+        },
+        compliance_tier: user.complianceTier,
+        multisig: multisigConfig,
+        metadata: {
+          initiated_from: "send_money_page",
+          network_fee: fees.networkFee,
+          service_fee: fees.serviceFee,
+          ...(extraMetadata || {}),
+        },
+      };
+    },
+    [
+      amountValue,
+      countryInfo,
+      fees.networkFee,
+      fees.serviceFee,
+      multisigConfig,
+      newRecipient,
+      selectedCashOutMethod,
+      selectedContact,
+      user,
+    ],
+  );
 
   const handleSelectContact = useCallback((contact: Contact) => {
     setSelectedContact(contact);
@@ -192,15 +311,39 @@ export default function SendMoney() {
     setStep("amount");
   }, [recipientInput]);
 
-  const handleAmountSubmit = useCallback(() => {
+  const handleAmountSubmit = useCallback(async () => {
     if (amountError) {
       setSubmissionError(amountError);
       toast.error(amountError);
       return;
     }
-    setSubmissionError(null);
-    setStep("confirm");
-  }, [amountError]);
+    try {
+      setIsSimulating(true);
+      const simulation = await simulateTransfer(
+        buildTransferPayload({ preflight_only: true }),
+      );
+      setSimulationResult(simulation);
+      if (!simulation.executable && simulation.expected_status !== 'awaiting_multisig') {
+        const msg = simulation.warnings[0] || 'Simulation failed. Transfer blocked.';
+        setSubmissionError(msg);
+        toast.error(msg);
+        return;
+      }
+      setSubmissionError(null);
+      setStep("confirm");
+      if (simulation.warnings.length > 0) {
+        toast.message('Simulation completed with warnings', {
+          description: simulation.warnings[0],
+        });
+      }
+    } catch (error: unknown) {
+      const msg = getErrorMessage(error);
+      setSubmissionError(msg);
+      toast.error(msg);
+    } finally {
+      setIsSimulating(false);
+    }
+  }, [amountError, buildTransferPayload]);
 
   const handleResetPin = useCallback(() => {
     setTransactionPin(null);
@@ -307,7 +450,7 @@ export default function SendMoney() {
         asset: "USDC",
         destination: `stellar:${destinationAddress}`, // Mock stellar address conversion
         memo: `SwiftSend transfer to ${selectedContact?.name || newRecipient?.name || "recipient"}`,
-        networkFee: "0.00001",
+        networkFee: fees.networkFee.toFixed(5),
         estimatedTime: "3-5 seconds",
       });
       setShowWalletSigning(true);
@@ -372,55 +515,14 @@ export default function SendMoney() {
 
   const submitTransfer = useCallback(
     async (extraMetadata?: Record<string, unknown>) => {
-      if (!user) {
-        throw new Error("You must be signed in to send money");
-      }
       if (!transactionSigningSecret) {
         throw new Error(
           "Transaction signing is not available for this session",
         );
       }
 
-      const recipientName =
-        selectedContact?.name || newRecipient?.name || "Recipient";
-      const recipientIdentifier =
-        selectedContact?.phone || newRecipient?.identifier || "";
-      const recipientCountry = selectedContact?.countryCode || "US";
-      const partnerCode =
-        selectedCashOutMethod?.partnerName ??
-        CASH_PICKUP_PARTNER_BY_COUNTRY[recipientCountry] ??
-        "MONEYGRAM";
-      const destinationCurrency =
-        countryInfo?.currencyCode ??
-        DESTINATION_CURRENCY_BY_COUNTRY[recipientCountry] ??
-        "USD";
-
       const transfer = await createTransfer(
-        {
-          idempotency_key: `transfer_${Date.now()}`,
-          from_wallet_id: user.walletAddress || user.id,
-          user_id: user.id,
-          amount: amountValue,
-          currency: "USDC",
-          recipient: {
-            type: "cash_pickup",
-            country: recipientCountry,
-            partner_code: partnerCode,
-            metadata: {
-              identifier: recipientIdentifier,
-              name: recipientName,
-              source: newRecipient ? newRecipient.type : "recent_contact",
-              destination_currency: destinationCurrency,
-            },
-          },
-          compliance_tier: user.complianceTier,
-          metadata: {
-            initiated_from: "send_money_page",
-            network_fee: fees.networkFee,
-            service_fee: fees.serviceFee,
-            ...(extraMetadata || {}),
-          },
-        },
+        buildTransferPayload(extraMetadata),
         transactionSigningSecret,
       );
 
@@ -431,15 +533,8 @@ export default function SendMoney() {
       return transfer;
     },
     [
-      amountValue,
-      countryInfo,
-      fees.networkFee,
-      fees.serviceFee,
-      newRecipient,
-      selectedCashOutMethod,
-      selectedContact,
+      buildTransferPayload,
       transactionSigningSecret,
-      user,
     ],
   );
 
@@ -972,9 +1067,11 @@ export default function SendMoney() {
                 size="lg"
                 className="w-full"
                 onClick={handleAmountSubmit}
-                disabled={Boolean(amountError) || isNetworkOffline}
+                disabled={Boolean(amountError) || isNetworkOffline || isSimulating}
               >
-                {!amount || amountValue <= 0 ? (
+                {isSimulating ? (
+                  "Running simulation..."
+                ) : !amount || amountValue <= 0 ? (
                   "Enter amount to continue"
                 ) : isNetworkOffline ? (
                   "Network offline"
@@ -1076,6 +1173,25 @@ export default function SendMoney() {
                   </div>
                 </div>
               </div>
+
+              {simulationResult && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50/80 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+                  <p className="font-semibold mb-1">Preflight Simulation</p>
+                  <p>
+                    Expected status:{" "}
+                    <span className="font-medium">{simulationResult.expected_status}</span>
+                  </p>
+                  {simulationResult.multisig && (
+                    <p>
+                      Multisig approvals: {simulationResult.multisig.approvals_count}/
+                      {simulationResult.multisig.threshold}
+                    </p>
+                  )}
+                  {simulationResult.warnings.length > 0 && (
+                    <p className="mt-1">{simulationResult.warnings[0]}</p>
+                  )}
+                </div>
+              )}
 
               {/* Detailed Fee Breakdown */}
               <FeeBreakdown amount={parseFloat(amount)} />

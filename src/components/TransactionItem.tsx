@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { ArrowUpRight, ArrowDownLeft, Phone, Receipt, Clock } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Phone, Receipt, Clock, ExternalLink } from 'lucide-react';
 import { Transaction } from '@/types';
 import { StatusBadge } from './StatusBadge';
 import { Badge } from './ui/badge';
@@ -109,6 +109,26 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
               <p className="font-mono text-xs text-foreground">
                 {transaction.id.slice(0, 8)}...{transaction.id.slice(-4)}
               </p>
+              {transaction.txHash && (
+                <p className="font-mono text-[10px] text-muted-foreground mt-1">
+                  Hash: {transaction.txHash.slice(0, 12)}...{transaction.txHash.slice(-8)}
+                </p>
+              )}
+              {(transaction.explorerUrl || transaction.txHash) && (
+                <a
+                  href={
+                    transaction.explorerUrl ||
+                    `https://stellar.expert/explorer/public/tx/${transaction.txHash}`
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  Open in Stellar Explorer
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
             </div>
           </div>
 

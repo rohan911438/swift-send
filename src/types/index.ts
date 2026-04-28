@@ -115,6 +115,8 @@ export interface Transaction {
   destinationCurrency?: string;
   category?: string;
   notes?: string;
+  txHash?: string;
+  explorerUrl?: string;
   risk?: TransactionRiskSummary;
 }
 
