@@ -72,12 +72,27 @@ export interface SpendingInsights {
   monthlyTransferData: SpendingMonth[];
   categoryData: SpendingCategory[];
   topExpenses: TopExpense[];
+  healthScore?: FinancialHealthScore;
 }
 
 export interface NotificationsResponse {
   items: UserNotification[];
   unreadCount: number;
 }
+
+export interface FinancialHealthScore {
+  score: number; // 0-100
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  factors: {
+    spendingConsistency: number;
+    transactionSuccess: number;
+    frequencyPattern: number;
+    riskLevel: number;
+  };
+  recommendations: string[];
+  lastCalculated: Date;
+}
+
 export type RefundStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface RefundRecord {
