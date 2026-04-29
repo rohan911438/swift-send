@@ -12,6 +12,7 @@ import {
 } from '../auth/sessionStore';
 import { authenticate } from '../middleware/authenticate';
 import { deleteCachedKey, getCachedJson, setCachedJson } from '../utils/redisCache';
+import { verifyRateLimiter, resendRateLimiter } from '../auth/rateLimiter';
 
 interface LoginBody {
   identifier: string;
@@ -123,9 +124,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
     if (!code) {
       return reply.status(400).send({ error: 'code is required' });
     }
-    if (!isValidVerificationCode(code)) {
-      return reply.status(400).send({ error: 'Invalid verification code' });
-    }
 
     const token = request.user as JwtSessionPayload;
     const session = getSession(token.sub);
@@ -134,6 +132,26 @@ export default async function authRoutes(fastify: FastifyInstance) {
       return reply.status(401).send({ error: 'Session expired' });
     }
 
+    if (verifyRateLimiter.isLimited(session.id)) {
+      return reply.status(429).send({
+        error: 'Account locked due to too many failed attempts',
+        lockedSeconds: verifyRateLimiter.getRemainingSeconds(session.id),
+      });
+    }
+
+    if (!isValidVerificationCode(code)) {
+      verifyRateLimiter.recordAttempt(session.id);
+      const locked = verifyRateLimiter.isLimited(session.id);
+      if (locked) {
+        return reply.status(429).send({
+          error: 'Account locked due to too many failed attempts',
+          lockedSeconds: verifyRateLimiter.getRemainingSeconds(session.id),
+        });
+      }
+      return reply.status(400).send({ error: 'Invalid verification code' });
+    }
+
+    verifyRateLimiter.reset(session.id);
     session.verified = true;
     if (!session.hasWallet) {
       session.onboardingCompleted = false;
@@ -150,6 +168,37 @@ export default async function authRoutes(fastify: FastifyInstance) {
       user: session.user ?? null,
       onboardingRequired: session.verified && !session.onboardingCompleted && !session.user,
     });
+  });
+
+  fastify.post('/auth/verify/unlock', { preHandler: [authenticate] }, async (request, reply) => {
+    const token = request.user as JwtSessionPayload;
+    const session = getSession(token.sub);
+    if (!session) {
+      clearAuthCookie(reply);
+      return reply.status(401).send({ error: 'Session expired' });
+    }
+
+    verifyRateLimiter.reset(session.id);
+    return reply.send({ ok: true, message: 'Verification attempts reset. You may try again.' });
+  });
+
+  fastify.post('/auth/resend', { preHandler: [authenticate] }, async (request, reply) => {
+    const token = request.user as JwtSessionPayload;
+    const session = getSession(token.sub);
+    if (!session) {
+      clearAuthCookie(reply);
+      return reply.status(401).send({ error: 'Session expired' });
+    }
+
+    if (resendRateLimiter.isLimited(session.id)) {
+      return reply.status(429).send({
+        error: 'Too many resend attempts. Please try again later.',
+        lockedSeconds: resendRateLimiter.getRemainingSeconds(session.id),
+      });
+    }
+
+    resendRateLimiter.recordAttempt(session.id);
+    return reply.send({ ok: true, message: 'Verification code resent.' });
   });
 
   fastify.post('/auth/logout', async (request, reply) => {

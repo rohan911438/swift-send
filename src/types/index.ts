@@ -120,6 +120,7 @@ export interface Transaction {
   explorerUrl?: string;
   risk?: TransactionRiskSummary;
   isOptimistic?: boolean;
+  isStarred?: boolean;
 }
 
 export interface FeeBreakdown {

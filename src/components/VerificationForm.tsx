@@ -16,7 +16,10 @@ export default function VerificationForm({ onBack }: VerificationFormProps) {
   const [countdown, setCountdown] = useState(30);
   const [otpExpiry, setOtpExpiry] = useState(300); // 5 minutes OTP expiry
   const [isOtpExpired, setIsOtpExpired] = useState(false);
-  const { verifyCode, resendCode, authUser } = useAuth();
+  const [lockError, setLockError] = useState<string | null>(null);
+  const [lockRemaining, setLockRemaining] = useState<number | null>(null);
+  const [isUnlocking, setIsUnlocking] = useState(false);
+  const { verifyCode, resendCode, unlockAccount, authUser } = useAuth();
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const isEmail = authUser?.email;
@@ -37,10 +40,25 @@ export default function VerificationForm({ onBack }: VerificationFormProps) {
     if (otpExpiry > 0) {
       const timer = setTimeout(() => setOtpExpiry(otpExpiry - 1), 1000);
       return () => clearTimeout(timer);
-    } else {
-      setIsOtpExpired(true);
     }
+
+    setIsOtpExpired(true);
   }, [otpExpiry]);
+
+  useEffect(() => {
+    if (lockRemaining === null) {
+      return;
+    }
+
+    if (lockRemaining <= 0) {
+      setLockRemaining(null);
+      setLockError(null);
+      return;
+    }
+
+    const timer = setTimeout(() => setLockRemaining(lockRemaining - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [lockRemaining]);
 
   const handleCodeChange = (index: number, value: string) => {
     if (value.length > 1) value = value.slice(-1);
@@ -76,11 +94,21 @@ export default function VerificationForm({ onBack }: VerificationFormProps) {
     }
 
     setIsLoading(true);
+    setLockError(null);
     try {
       await verifyCode(verificationCode);
       toast.success('Account verified successfully!');
     } catch (error) {
-      toast.error('Invalid verification code. Please try again.');
+      const message = error instanceof Error ? error.message : 'Invalid verification code. Please try again.';
+      if (message.toLowerCase().includes('locked')) {
+        setLockError(message);
+        const lockedSeconds = error instanceof Error ? (error as any).lockedSeconds : undefined;
+        if (typeof lockedSeconds === 'number') {
+          setLockRemaining(lockedSeconds);
+        }
+      } else {
+        toast.error('Invalid verification code. Please try again.');
+      }
       setCode(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } finally {
@@ -102,6 +130,19 @@ export default function VerificationForm({ onBack }: VerificationFormProps) {
       toast.error('Failed to resend code. Please try again.');
     } finally {
       setIsResending(false);
+    }
+  };
+
+  const handleUnlock = async () => {
+    setIsUnlocking(true);
+    try {
+      await unlockAccount();
+      setLockError(null);
+      toast.success('Account has been unlocked. You can try again.');
+    } catch (error) {
+      toast.error('Unable to unlock account. Please try again later.');
+    } finally {
+      setIsUnlocking(false);
     }
   };
 
@@ -199,6 +240,37 @@ export default function VerificationForm({ onBack }: VerificationFormProps) {
                 </p>
               )}
             </div>
+
+            {lockError && (
+              <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                <p>{lockError}</p>
+                {lockRemaining !== null && (
+                  <p className="text-xs mt-2 text-destructive/80">
+                    Try again in {Math.ceil(lockRemaining / 1)} second{lockRemaining === 1 ? '' : 's'}.
+                  </p>
+                )}
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleUnlock}
+                    disabled={isUnlocking}
+                  >
+                    {isUnlocking ? 'Unlocking…' : 'Reset attempts'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleResend}
+                    disabled={isResending}
+                  >
+                    {isResending ? 'Resending…' : 'Resend code'}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <Button
               type="submit"

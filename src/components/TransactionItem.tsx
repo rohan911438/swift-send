@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { ArrowUpRight, ArrowDownLeft, Phone, Receipt, Clock, ExternalLink, Zap } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Phone, Receipt, Clock, ExternalLink, Zap, Star } from 'lucide-react';
 import { Transaction } from '@/types';
 import { StatusBadge } from './StatusBadge';
 import { Badge } from './ui/badge';
@@ -14,9 +14,18 @@ interface TransactionItemProps {
   onClick?: () => void;
   showDetailedView?: boolean;
   senderName?: string;
+  isStarred?: boolean;
+  onToggleStar?: (transactionId: string) => void;
 }
 
-function TransactionItemComponent({ transaction, onClick, showDetailedView = false, senderName = '' }: TransactionItemProps) {
+function TransactionItemComponent({
+  transaction,
+  onClick,
+  showDetailedView = false,
+  senderName = '',
+  isStarred = false,
+  onToggleStar,
+}: TransactionItemProps) {
   const isSend = transaction.type === 'send';
   const feeSplit = splitFee(transaction.fee, { network: 0.1, service: 0.9 });
   
@@ -25,10 +34,30 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
   const formattedTimestamp = format(transaction.timestamp, 'PPp');
   const relativeTime = formatDistanceToNow(transaction.timestamp, { addSuffix: true });
 
+  const handleStarToggle = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (onToggleStar) {
+      onToggleStar(transaction.id);
+    }
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!onClick) {
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick();
+    }
+  };
+
   return (
-    <button
+    <div
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
-      className="w-full flex flex-col gap-3 p-3 sm:p-4 rounded-xl bg-card hover:bg-secondary/50 transition-all duration-200 shadow-card animate-slide-up border border-border/50 overflow-hidden"
+      onKeyDown={handleKeyDown}
+      className="w-full flex flex-col gap-3 p-3 sm:p-4 rounded-xl bg-card hover:bg-secondary/50 transition-all duration-200 shadow-card animate-slide-up border border-border/50 overflow-hidden cursor-pointer"
     >
       {/* Main Transaction Row */}
       <div className="flex items-center gap-3 sm:gap-4 min-w-0">
@@ -46,20 +75,39 @@ function TransactionItemComponent({ transaction, onClick, showDetailedView = fal
         </div>
 
         <div className="flex-1 text-left min-w-0">
-          <div className="flex items-center justify-between mb-1">
-            <p className="font-semibold text-foreground truncate">
-              {isSend ? 'To ' : 'From '}{transaction.recipientName}
-            </p>
-            <span
-              className={cn(
-                'font-bold text-base sm:text-lg',
-                isSend ? 'text-foreground' : 'text-green-600'
+          <div className="flex items-center justify-between mb-1 gap-3">
+            <div className="min-w-0">
+              <p className="font-semibold text-foreground truncate">
+                {isSend ? 'To ' : 'From '}{transaction.recipientName}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {onToggleStar && (
+                <button
+                  type="button"
+                  onClick={handleStarToggle}
+                  className={cn(
+                    'rounded-full p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                    isStarred
+                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                      : 'bg-muted/20 text-muted-foreground hover:bg-muted/30',
+                  )}
+                  aria-label={isStarred ? 'Unstar transaction' : 'Star transaction'}
+                >
+                  <Star className={cn('w-4 h-4', isStarred ? 'fill-current text-amber-700' : 'text-muted-foreground')} />
+                </button>
               )}
-            >
-              {isSend ? '-' : '+'}${transaction.amount.toFixed(2)}
-            </span>
+              <span
+                className={cn(
+                  'font-bold text-base sm:text-lg',
+                  isSend ? 'text-foreground' : 'text-green-600'
+                )}
+              >
+                {isSend ? '-' : '+'}${transaction.amount.toFixed(2)}
+              </span>
+            </div>
           </div>
-          
+
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Phone className="w-3 h-3" />
