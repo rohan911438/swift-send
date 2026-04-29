@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useDeferredValue } from 'react';
-import { ChevronDown, Search, Filter, Calendar, Banknote, TrendingUp, Clock, ArrowLeft, FileDown, List } from 'lucide-react';
+import { ChevronDown, Search, Filter, Calendar, Banknote, TrendingUp, Clock, ArrowLeft, FileDown, List, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TransactionItem } from '@/components/TransactionItem';
 import { ActivityTimeline } from '@/components/ActivityTimeline';
+import { useStarredTransactions } from '@/hooks/useStarredTransactions';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -45,10 +46,12 @@ const History: React.FC = () => {
   const [customAmountMin, setCustomAmountMin] = useState<string>('');
   const [customAmountMax, setCustomAmountMax] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
+  const [showStarredOnly, setShowStarredOnly] = useState(false);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const isMobile = useIsMobile();
   const deferredSearchTerm = useDeferredValue(searchTerm);
+  const { starredIds, starredCount, isStarred, toggleStar } = useStarredTransactions();
 
   const handleGoBack = useCallback(() => {
     navigate(-1); // Go back to previous page
@@ -174,6 +177,9 @@ const History: React.FC = () => {
         matchesAmount = false;
       }
 
+      if (showStarredOnly && !isStarred(transaction.id)) {
+        return false;
+      }
       return matchesSearch && matchesStatus && matchesType && matchesDate && matchesAmount;
     });
 
@@ -582,7 +588,7 @@ const History: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap gap-2 items-center justify-between mb-4">
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 items-center">
                 <Button
                   variant={viewMode === 'list' ? 'default' : 'outline'}
                   size="sm"
@@ -600,6 +606,15 @@ const History: React.FC = () => {
                 >
                   <Clock className="w-4 h-4 mr-2" />
                   Timeline
+                </Button>
+                <Button
+                  variant={showStarredOnly ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setShowStarredOnly((current) => !current)}
+                  className="h-9"
+                >
+                  <Star className="w-4 h-4 mr-2" />
+                  {showStarredOnly ? `Starred (${starredCount})` : `Show Starred (${starredCount})`}
                 </Button>
               </div>
               <div className="flex items-center gap-2">
@@ -626,6 +641,8 @@ const History: React.FC = () => {
                       showDetailedView={expandedTransactionId === transaction.id}
                       onClick={() => handleTransactionClick(transaction.id)}
                       senderName={user?.name ?? ''}
+                      isStarred={isStarred(transaction.id)}
+                      onToggleStar={toggleStar}
                     />
                   </div>
                 ))}
