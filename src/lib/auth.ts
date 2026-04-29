@@ -69,7 +69,34 @@ export async function verifyCode(code: string): Promise<AuthResponse> {
     method: 'POST',
     body: JSON.stringify({ code }),
   });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      lockedSeconds?: number;
+    };
+    const error = new Error(body.error || 'Unable to verify code');
+    if (body.lockedSeconds !== undefined) {
+      (error as any).lockedSeconds = body.lockedSeconds;
+    }
+    throw error;
+  }
+
   return requireJson<AuthResponse>(response, 'Unable to verify code');
+}
+
+export async function resendCode(): Promise<{ ok: boolean; message: string }> {
+  const response = await apiFetch('/auth/resend', {
+    method: 'POST',
+  });
+  return requireJson<{ ok: boolean; message: string }>(response, 'Unable to resend verification code');
+}
+
+export async function unlockAccount(): Promise<{ ok: boolean; message: string }> {
+  const response = await apiFetch('/auth/verify/unlock', {
+    method: 'POST',
+  });
+  return requireJson<{ ok: boolean; message: string }>(response, 'Unable to unlock account');
 }
 
 export async function authMe(): Promise<AuthResponse> {
