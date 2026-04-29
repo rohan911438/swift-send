@@ -103,9 +103,71 @@ export default function SendMoney() {
   const [feeEstimate, setFeeEstimate] = useState<TransferFeeEstimate | null>(null);
   const [simulationResult, setSimulationResult] = useState<TransferSimulationResult | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [bulkInput, setBulkInput] = useState('');
+  const [bulkResult, setBulkResult] = useState<{
+    success: number;
+    failed: number;
+    details: Array<{ identifier: string; status: 'success' | 'failed'; message?: string }>;
+  } | null>(null);
+  const [isBulkSending, setIsBulkSending] = useState(false);
   const pinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const { rates, convert } = useExchangeRate();
+  const { rates, convert, changes } = useExchangeRate();
   const { data: countryInfo, isLoading: countryInfoLoading, isError: countryInfoError } = useCountryInfo(selectedContact?.countryCode ?? null);
+
+  const parsedBulkTransfers = useMemo(() => {
+    const lines = bulkInput
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    return lines.map((line, index) => {
+      const parts = line.split(',').map((part) => part.trim()).filter(Boolean);
+      const identifier = parts[0] ?? '';
+      const amount = Number(parts[1]?.replace(/[^0-9.]/g, ''));
+      const type = detectRecipientType(identifier);
+      const name = type === 'email'
+        ? identifier.split('@')[0]
+        : identifier.replace(/[^0-9]/g, '').slice(-4) || identifier;
+
+      if (!identifier || !type) {
+        return {
+          identifier,
+          type: 'email' as const,
+          amount: 0,
+          name,
+          error: `Line ${index + 1}: enter a valid email or phone number`,
+        };
+      }
+
+      if (Number.isNaN(amount) || amount <= 0) {
+        return {
+          identifier,
+          type,
+          amount: 0,
+          name,
+          error: `Line ${index + 1}: enter a valid amount`,
+        };
+      }
+
+      return {
+        identifier,
+        type,
+        amount,
+        name,
+      };
+    });
+  }, [bulkInput]);
+
+  const bulkValidTransfers = useMemo(
+    () => parsedBulkTransfers.filter((entry) => !entry.error),
+    [parsedBulkTransfers],
+  );
+
+  const bulkTotalAmount = useMemo(
+    () => bulkValidTransfers.reduce((sum, entry) => sum + entry.amount, 0),
+    [bulkValidTransfers],
+  );
 
   const countryToCurrency: Record<string, string> = {
     'MX': 'MXN',
@@ -286,6 +348,99 @@ export default function SendMoney() {
       user,
     ],
   );
+
+  const buildBulkTransferPayload = useCallback(
+    (
+      recipient: string,
+      amount: number,
+      type: 'email' | 'phone',
+      name: string,
+    ): TransferCreatePayload => {
+      if (!user) {
+        throw new Error('You must be signed in to send money');
+      }
+
+      const recipientCountry = 'US';
+      const partnerCode = CASH_PICKUP_PARTNER_BY_COUNTRY[recipientCountry] ?? 'MONEYGRAM';
+      const destinationCurrency = 'USD';
+
+      return {
+        idempotency_key: `bulk_transfer_${recipient}_${Date.now()}`,
+        from_wallet_id: user.walletAddress || user.id,
+        user_id: user.id,
+        amount,
+        currency: 'USDC',
+        recipient: {
+          type: 'cash_pickup',
+          country: recipientCountry,
+          partner_code: partnerCode,
+          metadata: {
+            identifier: recipient,
+            name,
+            source: type === 'email' ? 'bulk_email' : 'bulk_phone',
+            destination_currency: destinationCurrency,
+          },
+        },
+        compliance_tier: user.complianceTier,
+        multisig: multisigConfig,
+        metadata: {
+          initiated_from: 'bulk_send',
+          recipient_type: type,
+          recipient_count: bulkValidTransfers.length,
+        },
+      };
+    },
+    [bulkValidTransfers.length, multisigConfig, user],
+  );
+
+  const handleBulkSend = useCallback(async () => {
+    if (bulkValidTransfers.length === 0) {
+      toast.error('No valid bulk recipients configured.');
+      return;
+    }
+
+    if (!transactionSigningSecret) {
+      toast.error('Transaction signing is not available for bulk transfers.');
+      return;
+    }
+
+    if (bulkTotalAmount > (user?.usdcBalance || 0)) {
+      toast.error('Insufficient balance for bulk transfers.');
+      return;
+    }
+
+    setIsBulkSending(true);
+    setBulkResult(null);
+
+    const results: Array<{ identifier: string; status: 'success' | 'failed'; message?: string }> = [];
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (const entry of bulkValidTransfers) {
+      try {
+        await createTransfer(buildBulkTransferPayload(entry.identifier, entry.amount, entry.type, entry.name), transactionSigningSecret);
+        successCount += 1;
+        results.push({ identifier: entry.identifier, status: 'success' });
+      } catch (error: unknown) {
+        failedCount += 1;
+        results.push({
+          identifier: entry.identifier,
+          status: 'failed',
+          message: getErrorMessage(error),
+        });
+      }
+    }
+
+    setBulkResult({ success: successCount, failed: failedCount, details: results });
+    setIsBulkSending(false);
+
+    if (successCount > 0) {
+      toast.success(`${successCount} of ${bulkValidTransfers.length} bulk transfers initiated.`);
+    }
+    if (failedCount > 0) {
+      toast.error(`${failedCount} bulk transfers failed. Check the review below.`);
+    }
+  }, [bulkTotalAmount, bulkValidTransfers, buildBulkTransferPayload, transactionSigningSecret, user?.usdcBalance]);
 
   const handleSelectContact = useCallback((contact: Contact) => {
     setSelectedContact(contact);
@@ -792,6 +947,98 @@ export default function SendMoney() {
                 )}
               </div>
 
+              <div className="rounded-2xl border border-border/60 bg-muted/40 p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Bulk transfers</p>
+                    <p className="text-xs text-muted-foreground">
+                      Send money to multiple recipients at once using a comma-separated list.
+                    </p>
+                  </div>
+                  <Button
+                    variant={isBulkMode ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setIsBulkMode((current) => !current)}
+                  >
+                    {isBulkMode ? 'Single transfer' : 'Bulk transfer'}
+                  </Button>
+                </div>
+
+                {isBulkMode ? (
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      Enter one recipient per line in the format: <span className="font-medium">recipient, amount</span>.
+                    </p>
+                    <textarea
+                      value={bulkInput}
+                      onChange={(event) => setBulkInput(event.target.value)}
+                      className="w-full min-h-[180px] rounded-2xl border border-border/60 bg-background p-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10"
+                      placeholder="jane@example.com, 100\n+1234567890, 50"
+                    />
+                    {parsedBulkTransfers.length > 0 && (
+                      <div className="space-y-2 text-sm">
+                        {parsedBulkTransfers.map((entry, index) => (
+                          <div
+                            key={`${entry.identifier}-${index}`}
+                            className="rounded-xl border border-border/60 bg-background p-3"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="font-medium text-foreground truncate">{entry.identifier}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {entry.type.toUpperCase()} • {entry.name}
+                                </p>
+                              </div>
+                              <p className="font-semibold text-foreground">${entry.amount.toFixed(2)}</p>
+                            </div>
+                            {entry.error && (
+                              <p className="text-xs text-destructive mt-2">{entry.error}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="text-sm text-muted-foreground">
+                        {bulkValidTransfers.length} valid recipient{bulkValidTransfers.length !== 1 ? 's' : ''}
+                        {bulkTotalAmount > 0 && (
+                          <> • Total ${bulkTotalAmount.toFixed(2)}</>
+                        )}
+                      </div>
+                      <Button
+                        variant="hero"
+                        size="lg"
+                        className="w-full sm:w-auto"
+                        onClick={handleBulkSend}
+                        disabled={isBulkSending || bulkValidTransfers.length === 0}
+                      >
+                        {isBulkSending ? 'Sending bulk transfers…' : 'Send bulk transfers'}
+                      </Button>
+                    </div>
+                    {bulkResult && (
+                      <div className="rounded-2xl border border-border/60 bg-background p-4 text-sm space-y-2">
+                        <p className="font-semibold text-foreground">Bulk transfer summary</p>
+                        <p className="text-muted-foreground">
+                          {bulkResult.success} succeeded, {bulkResult.failed} failed.
+                        </p>
+                        {bulkResult.details.map((detail) => (
+                          <div key={detail.identifier} className="flex items-center justify-between gap-2">
+                            <span>{detail.identifier}</span>
+                            <span className={detail.status === 'success' ? 'text-green-600' : 'text-destructive'}>
+                              {detail.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground">
+                    Bulk send is available when you need to send money to several recipients at once. You can switch back to a single transfer at any time.
+                  </div>
+                )}
+              </div>
+
               {/* Country Info Panel — shown after contact selection, before advancing (Req 1.1–1.5) */}
               {selectedContact && (
                 <div className="space-y-4">
@@ -894,13 +1141,24 @@ export default function SendMoney() {
                 </div>
 
                 {amountValue > 0 && recipientCurrency !== 'USD' && (
-                  <div className="flex items-center justify-center gap-2 mb-4 animate-fade-in">
-                    <p className="text-lg font-medium text-primary">
-                      ≈ {convertedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {recipientCurrency}
-                    </p>
-                    <span className="text-xs text-muted-foreground">
-                      (1 USDC = {rates[recipientCurrency]?.toFixed(2)} {recipientCurrency})
-                    </span>
+                  <div className="flex flex-col items-center justify-center gap-2 mb-4 animate-fade-in">
+                    <div className="flex items-center gap-2">
+                      <p className="text-lg font-medium text-primary">
+                        ≈ {convertedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {recipientCurrency}
+                      </p>
+                      <span className="text-xs text-muted-foreground">
+                        (1 USDC = {rates[recipientCurrency]?.toFixed(2)} {recipientCurrency})
+                      </span>
+                    </div>
+                    {changes[recipientCurrency] && Math.abs(changes[recipientCurrency]) >= 1.5 && (
+                      <div className="rounded-2xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900">
+                        Real-time FX alert: USD → {recipientCurrency} has moved{' '}
+                        <span className="font-semibold">
+                          {changes[recipientCurrency] > 0 ? 'up' : 'down'} {Math.abs(changes[recipientCurrency]).toFixed(2)}%
+                        </span>{' '}
+                        since the last refresh.
+                      </div>
+                    )}
                   </div>
                 )}
                 
