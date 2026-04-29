@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { SkeletonTransactionList, SkeletonCard } from '@/components/SkeletonLoaders';
@@ -15,7 +15,7 @@ import { SpendingInsightsCard } from '@/components/SpendingInsightsCard';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
-import { transactions } from '@/data/mockData';
+import { fetchNotifications, fetchSpendingInsights, fetchTransactions } from '@/lib/activity';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { Send, Plus, Bell, ArrowRight, Shield, Info, Zap, Clock, TrendingDown, Star, CheckCircle2, Globe2, Award, Wallet, ExternalLink, MapPin } from 'lucide-react';
 
@@ -23,13 +23,43 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { connectionState } = useWallet();
-  const { rates } = useExchangeRate();
-  const currentExchangeRate = rates[user?.localCurrency || 'USD'] || 1.0;
+  const { rates, changes, lastUpdated } = useExchangeRate();
+  const [showWalletDialog, setShowWalletDialog] = useState(false);
 
+  const transactionsQuery = useQuery({
+    queryKey: ['activity', 'recent-transactions'],
+    queryFn: () => fetchTransactions(5),
+  });
+
+  const notificationsQuery = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => fetchNotifications(5),
+  });
+
+  const insightsQuery = useQuery({
+    queryKey: ['activity', 'insights'],
+    queryFn: fetchSpendingInsights,
+  });
+
+  const currentExchangeRate = rates[user?.localCurrency || 'USD'] || 1.0;
   const recentTransactions = transactionsQuery.data || [];
   const unreadNotifications = notificationsQuery.data?.unreadCount || 0;
   const isNewUser = user?.createdAt && 
     new Date().getTime() - new Date(user.createdAt).getTime() < 7 * 24 * 60 * 60 * 1000; // 7 days
+
+  const significantRateAlerts = useMemo(() => {
+    return Object.entries(changes)
+      .filter(([, diff]) => Math.abs(diff) >= 2)
+      .sort(([, a], [, b]) => Math.abs(b) - Math.abs(a));
+  }, [changes]);
+
+  const topRateAlert = significantRateAlerts[0];
+  const formattedRateAlert = topRateAlert
+    ? {
+        currency: topRateAlert[0],
+        change: topRateAlert[1],
+      }
+    : null;
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -118,6 +148,29 @@ export default function Dashboard() {
             lockedBalance={user?.lockedBalance || 0}
             pendingTransactions={user?.pendingTransactions || 0}
           />
+
+          {formattedRateAlert && (
+            <Card className="border border-amber-200 bg-amber-50/80 dark:bg-amber-900/20 dark:border-amber-700 rounded-xl p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                    Real-time FX Alert
+                  </p>
+                  <p className="text-sm text-foreground/90 mt-1">
+                    USD → {formattedRateAlert.currency} moved{' '}
+                    <span className="font-semibold">
+                      {formattedRateAlert.change > 0 ? 'up' : 'down'}{' '}
+                      {Math.abs(formattedRateAlert.change).toFixed(2)}%
+                    </span>{' '}
+                    since the last rate refresh.
+                  </p>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : 'Live'}
+                </span>
+              </div>
+            </Card>
+          )}
 
           {/* Compliance Dashboard - Compact View */}
           <ComplianceDashboard compact={true} showUpgradePrompt={true} />
