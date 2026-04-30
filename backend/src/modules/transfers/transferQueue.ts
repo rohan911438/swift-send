@@ -2,6 +2,7 @@ import { createLogger } from '../../logger';
 import { EventBus } from '../../core/eventBus';
 import { TransferLifecycle } from './transferLifecycle';
 import { CreateTransferCommand } from './domain';
+import { TransferEventType } from './events';
 
 export interface QueuedTransferJob {
   id: string;
@@ -98,7 +99,7 @@ export class TransferQueue {
           logger.info('transfer processed successfully');
 
           await this.eventBus.publish({
-            type: 'queue.transfer_completed',
+            type: TransferEventType.QueueCompleted,
             timestamp: new Date().toISOString(),
             payload: {
               jobId: job.id,
@@ -128,7 +129,7 @@ export class TransferQueue {
             logger.error({ retries: job.retries, error: job.error }, 'transfer processing failed after retries');
 
             await this.eventBus.publish({
-              type: 'queue.transfer_failed',
+              type: TransferEventType.QueueFailed,
               timestamp: new Date().toISOString(),
               payload: {
                 jobId: job.id,

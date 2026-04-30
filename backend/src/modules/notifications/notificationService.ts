@@ -1,5 +1,7 @@
 import { getSession } from '../../auth/sessionStore';
 import type { EventBus } from '../../core/eventBus';
+import { deviceTokenService } from './deviceTokenService';
+import { sendMulticastPushNotification } from '../../utils/fcmMessaging';
 
 export type NotificationType = 'success' | 'error' | 'warning' | 'info';
 export type NotificationChannel = 'email' | 'sms' | 'in_app';
@@ -110,7 +112,7 @@ export class NotificationService {
     });
   }
 
-  private createForUser(
+  private async createForUser(
     userId: string,
     input: {
       type: NotificationType;
@@ -146,7 +148,38 @@ export class NotificationService {
       },
     });
 
+    await this.sendPushNotification(notification);
     return notification;
+  }
+
+  private async sendPushNotification(notification: UserNotification) {
+    try {
+      const tokens = await deviceTokenService.getActiveTokenStrings(notification.userId);
+      if (tokens.length === 0) {
+        return;
+      }
+
+      const pushData = {
+        type: String(notification.metadata?.kind || notification.type),
+        transferId: notification.transferId || '',
+        notificationId: notification.id,
+      };
+
+      const result = await sendMulticastPushNotification(
+        tokens,
+        notification.title,
+        notification.message,
+        pushData,
+      );
+
+      if (result.failedTokens.length > 0) {
+        await Promise.all(
+          result.failedTokens.map((token) => deviceTokenService.deactivateDeviceToken(token)),
+        );
+      }
+    } catch (error) {
+      console.error('failed to send push notification', error);
+    }
   }
 
   private buildDeliveries(userId: string, timestamp: string): NotificationDelivery[] {

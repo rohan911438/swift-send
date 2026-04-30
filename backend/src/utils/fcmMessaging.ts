@@ -1,6 +1,5 @@
 import admin from 'firebase-admin';
-import { logger } from '@/logger';
-import { config } from '@/config';
+import { logger } from '../logger';
 
 interface FirebaseInitOptions {
   projectId: string;
@@ -16,8 +15,8 @@ let messaging: admin.messaging.Messaging | null = null;
  */
 export function initializeFirebase(options?: FirebaseInitOptions): admin.app.App | null {
   try {
-    const projectId = options?.projectId || config.firebase.projectId;
-    const serviceAccountKeyStr = options?.serviceAccountKey || config.firebase.serviceAccountKey;
+    const projectId = options?.projectId || process.env.FIREBASE_PROJECT_ID || '';
+    const serviceAccountKeyStr = options?.serviceAccountKey || process.env.FIREBASE_SERVICE_ACCOUNT_KEY || '';
 
     if (!projectId || !serviceAccountKeyStr) {
       logger.warn('[FCM] Firebase config missing (PROJECT_ID or SERVICE_ACCOUNT_KEY). Push notifications disabled.');
@@ -45,7 +44,7 @@ export function initializeFirebase(options?: FirebaseInitOptions): admin.app.App
     messaging = admin.messaging(app);
     return app;
   } catch (error) {
-    logger.error('[FCM] Failed to initialize Firebase:', error);
+    logger.error({ err: error }, '[FCM] Failed to initialize Firebase');
     return null;
   }
 }
@@ -112,7 +111,7 @@ export async function sendPushNotification(
     logger.debug(`[FCM] Message sent successfully: ${messageId}`);
     return messageId;
   } catch (error) {
-    logger.error('[FCM] Failed to send message to device token:', error);
+    logger.error({ err: error }, '[FCM] Failed to send message to device token');
     return null;
   }
 }
@@ -178,10 +177,10 @@ export async function sendMulticastPushNotification(
       },
     };
 
-    const response = await messaging.sendMulticast(message);
+    const response = await messaging.sendEachForMulticast(message);
     const failedTokens: string[] = [];
 
-    response.responses.forEach((resp, idx) => {
+    response.responses.forEach((resp: admin.messaging.SendResponse, idx: number) => {
       if (!resp.success) {
         failedTokens.push(deviceTokens[idx]);
       }
@@ -192,7 +191,7 @@ export async function sendMulticastPushNotification(
     );
     return { successCount: response.successCount, failedTokens };
   } catch (error) {
-    logger.error('[FCM] Failed to send multicast message:', error);
+    logger.error({ err: error }, '[FCM] Failed to send multicast message');
     return { successCount: 0, failedTokens: deviceTokens };
   }
 }

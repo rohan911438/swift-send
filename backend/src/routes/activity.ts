@@ -94,36 +94,6 @@ export default async function activityRoutes(fastify: FastifyInstance) {
     },
   );
 
-  fastify.get<{ Querystring: ActivityQuery }>(
-    '/notifications',
-    { preHandler: [requireVerifiedSession] },
-    async (req, reply) => {
-      const session = requireSessionUser(req.user as JwtSessionPayload, reply);
-      if (!session) return;
-      const limit = sanitizeLimit(req.query?.limit, 10, 50);
-      return fastify.container.services.notifications.listByUserId(session.user!.id, limit);
-    },
-  );
-
-  fastify.post(
-    '/notifications/:id/read',
-    { preHandler: [requireVerifiedSession] },
-    async (req, reply) => {
-      const session = requireSessionUser(req.user as JwtSessionPayload, reply);
-      if (!session) return;
-      const notificationId = (req.params as { id: string }).id;
-      const notification = fastify.container.services.notifications.markAsRead(
-        session.user!.id,
-        notificationId,
-      );
-
-      if (!notification) {
-        return reply.code(404).send({ error: 'notification not found' });
-      }
-
-      return notification;
-    },
-  );
 }
 
 function requireSessionUser(token: JwtSessionPayload, reply: FastifyReply): VerifiedSession | null {
