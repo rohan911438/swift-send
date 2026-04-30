@@ -76,4 +76,5 @@ export interface CreateTransferCommand {
     }>;
   };
   metadata?: Record<string, unknown>;
+  sourceIp?: string;
 }

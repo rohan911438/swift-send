@@ -65,6 +65,10 @@ export interface AppConfig {
     /** AES-256-GCM key used to encrypt PII fields at rest. Must be 32 bytes or derivable to 32 bytes. */
     key: string;
   };
+  secrets: {
+    lastRotatedAt: string;
+    rotationIntervalDays: number;
+  };
 }
 
 const intFromEnv = (value: string | undefined, fallback: number) => {
@@ -137,7 +141,7 @@ export const config: AppConfig = {
     recurringPayments: process.env.CONTRACT_RECURRING_PAYMENTS,
   },
   auth: {
-    jwtSecret: process.env.JWT_SECRET || 'dev-only-change-me-in-production',
+    jwtSecret: process.env.JWT_SECRET || '',
     jwtExpiresSeconds: intFromEnv(process.env.JWT_EXPIRES_SECONDS, 60 * 60 * 24 * 7),
     cookieName: process.env.AUTH_COOKIE_NAME || 'ss_session',
     corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:8080,http://127.0.0.1:8080')
@@ -146,8 +150,28 @@ export const config: AppConfig = {
       .filter(Boolean),
   },
   encryption: {
-    key: process.env.DATA_ENCRYPTION_KEY || 'dev-only-change-me-in-production-please-set-DATA_ENCRYPTION_KEY',
+    key: process.env.DATA_ENCRYPTION_KEY || '',
+  },
+  secrets: {
+    lastRotatedAt: process.env.SECRETS_LAST_ROTATED || new Date().toISOString(),
+    rotationIntervalDays: intFromEnv(process.env.SECRETS_ROTATION_INTERVAL_DAYS, 90),
   },
 };
+
+export function validateConfig() {
+  const required = [
+    { key: 'JWT_SECRET', value: config.auth.jwtSecret },
+    { key: 'DATA_ENCRYPTION_KEY', value: config.encryption.key },
+  ];
+
+  if (config.env === 'production') {
+    required.push({ key: 'STELLAR_DISTRIBUTION_SECRET', value: config.stellar.distributionSecret });
+  }
+
+  const missing = required.filter(r => !r.value).map(r => r.key);
+  if (missing.length > 0) {
+    throw new Error(`Missing required configuration secrets: ${missing.join(', ')}. Please set these in your environment.`);
+  }
+}
 
 export const isProd = () => config.env === 'production';

@@ -46,6 +46,7 @@ export class TransferLifecycle {
       destinationCountry: command.recipient.country,
       recipientType: command.recipient.type,
       historicalTransfers,
+      ipAddress: command.sourceIp,
     });
     const enrichedCompliance = {
       ...complianceDecision,
