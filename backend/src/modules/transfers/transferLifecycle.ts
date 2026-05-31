@@ -470,6 +470,22 @@ export class TransferLifecycle {
     };
   }
 
+
+  private isIncompleteFlow(transfer: TransferRecord) {
+    const latestStatus = transfer.statusHistory[transfer.statusHistory.length - 1]?.state;
+    return (
+      (transfer.state === 'submitted' && !transfer.transactionHash) ||
+      (transfer.state === 'held' && transfer.processingAttempts > 0) ||
+      latestStatus === 'validated'
+    );
+  }
+
+  private shouldRollbackIncompleteFlow(transfer: TransferRecord) {
+    const transferAgeMs = Date.now() - new Date(transfer.createdAt).getTime();
+    const staleWindowMs = Math.max(config.queues.settlementDelayMs * 3, 30_000);
+    return this.isIncompleteFlow(transfer) && transferAgeMs >= staleWindowMs;
+  }
+
   private async settleTransfer(transferId: string) {
     const transferLogger = this.getLogger({ transferId });
     const transfer = await this.repository.findById(transferId);
@@ -501,6 +517,7 @@ export class TransferLifecycle {
       this.appendStatus(transfer, 'submitted');
       transfer.transactionHash = this.resolveTransactionHash(transfer);
       this.appendStatus(transfer, 'settled');
+      await this.logReconciliationEvent(transfer, 'submitted', 'settled', 'settlement_completed');
       transfer.processingAttempts += 1;
       await this.repository.update(transfer);
       await this.eventBus.publish({
@@ -545,6 +562,81 @@ export class TransferLifecycle {
 
       await this.repository.update(transfer);
     }
+  }
+
+
+  private async rollbackIncompleteFlow(transfer: TransferRecord, reason: string) {
+    const transferLogger = this.getLogger({ transferId: transfer.id, reason });
+    transferLogger.warn({ state: transfer.state, attempts: transfer.processingAttempts }, 'triggering rollback for incomplete flow');
+
+    await this.wallets.refundEscrow({
+      userId: transfer.userId,
+      transferId: transfer.id,
+      destinationAccount: transfer.fromWalletId,
+      amount: transfer.amount,
+      currency: transfer.currency,
+      metadata: { reason: 'rollback_safeguard', rollbackReason: reason },
+    });
+
+    await this.eventBus.publish({
+      type: TransferEventType.RollbackTriggered,
+      timestamp: new Date().toISOString(),
+      payload: {
+        userId: transfer.userId,
+        transferId: transfer.id,
+        amount: transfer.amount,
+        currency: transfer.currency,
+        recipientName: this.recipientName(transfer),
+        reason,
+      },
+    });
+
+    const previousState = transfer.state;
+    transfer.lastError = `rollback:${reason}`;
+    this.appendStatus(transfer, 'failed', transfer.lastError);
+    await this.repository.update(transfer);
+    await this.logReconciliationEvent(transfer, previousState, 'failed', reason, {
+      attempts: transfer.processingAttempts,
+      escrowId: transfer.escrowId,
+    });
+
+    await this.eventBus.publish({
+      type: TransferEventType.Failed,
+      timestamp: new Date().toISOString(),
+      payload: {
+        userId: transfer.userId,
+        transferId: transfer.id,
+        amount: transfer.amount,
+        currency: transfer.currency,
+        recipientName: this.recipientName(transfer),
+        error: transfer.lastError,
+      },
+    });
+  }
+
+
+  private async logReconciliationEvent(
+    transfer: TransferRecord,
+    previousState: TransferState,
+    state: TransferState,
+    reason: string,
+    details?: Record<string, unknown>,
+  ) {
+    const transferLogger = this.getLogger({ transferId: transfer.id, reason, previousState, state });
+    transferLogger.info({ details }, 'reconciliation event logged');
+
+    await this.eventBus.publish({
+      type: TransferEventType.ReconciliationLogged,
+      timestamp: new Date().toISOString(),
+      payload: {
+        userId: transfer.userId,
+        transferId: transfer.id,
+        previousState,
+        state,
+        reason,
+        details,
+      },
+    });
   }
 
   private resolveTransactionHash(transfer: TransferRecord) {

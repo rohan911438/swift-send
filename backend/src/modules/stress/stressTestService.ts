@@ -13,6 +13,19 @@ export interface StressTestConfig {
   };
 }
 
+
+export interface ChaosTestConfig extends StressTestConfig {
+  apiDowntimeRate: number;
+  blockchainLatencyMs: number;
+}
+
+export interface ChaosTestResult extends StressTestResult {
+  downtimeInjected: number;
+  latencyInjected: number;
+  recoveredTransfers: number;
+  recoveryRate: number;
+}
+
 export interface StressTestResult {
   runId: string;
   config: StressTestConfig;
@@ -42,6 +55,68 @@ export class StressTestService {
 
   constructor(private readonly transfers: TransferLifecycle) {
     this.logger = createLogger({ component: 'stressTestService' });
+  }
+
+
+  async runChaosTest(config: ChaosTestConfig): Promise<ChaosTestResult> {
+    let downtimeInjected = 0;
+    let latencyInjected = 0;
+
+    const decoratedLifecycle = {
+      createTransfer: async (command: Parameters<TransferLifecycle['createTransfer']>[0]) => {
+        if (Math.random() < config.apiDowntimeRate) {
+          downtimeInjected += 1;
+          throw new Error('Injected API downtime');
+        }
+
+        if (config.blockchainLatencyMs > 0) {
+          latencyInjected += 1;
+          await this.delay(config.blockchainLatencyMs);
+        }
+
+        return this.transfers.createTransfer(command);
+      },
+    } as TransferLifecycle;
+
+    const baseService = new StressTestService(decoratedLifecycle);
+    const baseline = await baseService.runStressTest(config);
+
+    const downtimeFailures = baseline.perTransferResults.filter(
+      (result) => !result.success && result.error?.includes('Injected API downtime'),
+    );
+
+    let recoveredTransfers = 0;
+    for (const failedResult of downtimeFailures) {
+      try {
+        await this.transfers.createTransfer({
+          idempotencyKey: `${failedResult.transferId}_recovery`,
+          userId: config.userId,
+          fromWalletId: config.walletId,
+          amount: config.amount,
+          currency: 'USDC',
+          recipient: {
+            type: 'wallet',
+            walletPublicKey: 'GRECOVERYWALLETTEST1234567890123456789012345678',
+            country: 'US',
+          },
+        });
+        recoveredTransfers += 1;
+      } catch (err) {
+        this.logger.warn({ transferId: failedResult.transferId, err }, 'recovery retry failed');
+      }
+    }
+
+    const recoveryRate = downtimeFailures.length > 0
+      ? Math.round((recoveredTransfers / downtimeFailures.length) * 10000) / 100
+      : 100;
+
+    return {
+      ...baseline,
+      recoveredTransfers,
+      recoveryRate,
+      downtimeInjected,
+      latencyInjected,
+    };
   }
 
   async runStressTest(config: StressTestConfig): Promise<StressTestResult> {
@@ -134,6 +209,10 @@ export class StressTestService {
     );
 
     return result;
+  }
+
+  private delay(ms: number) {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms));
   }
 
   private async executeSingleTransfer(

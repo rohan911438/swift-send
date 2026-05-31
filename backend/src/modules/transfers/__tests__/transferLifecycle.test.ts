@@ -317,4 +317,67 @@ describe('TransferLifecycle', () => {
         .rejects.toThrow('idempotency_key is required');
     });
   });
+
+  describe('rollback safeguards', () => {
+    it('rolls back stale incomplete submitted flows', async () => {
+      const now = new Date(Date.now() - 60_000).toISOString();
+      const transfer = {
+        id: 'stale-submitted',
+        clientReference: 'stale-submitted',
+        userId: 'user-1',
+        fromWalletId: 'wallet-1',
+        recipient: { type: 'wallet' as const, walletPublicKey: 'GTEST123...' },
+        amount: 10,
+        currency: 'USDC',
+        state: 'submitted' as const,
+        statusHistory: [
+          { state: 'created' as const, at: now },
+          { state: 'held' as const, at: now },
+          { state: 'submitted' as const, at: now },
+        ],
+        compliance: await mockComplianceService.evaluateTransfer(),
+        processingAttempts: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await mockRepository.save(transfer as any);
+      await (transferLifecycle as any).settleTransfer('stale-submitted');
+
+      expect(mockWalletService.refundEscrow).toHaveBeenCalled();
+      const updated = await mockRepository.findById('stale-submitted');
+      expect(updated?.state).toBe('failed');
+      expect(mockEventBus.publish).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'transfer.reconciliation_logged' }),
+      );
+    });
+
+    it('does not roll back when submitted flow has transaction hash', async () => {
+      const now = new Date(Date.now() - 60_000).toISOString();
+      const transfer = {
+        id: 'submitted-with-hash',
+        clientReference: 'submitted-with-hash',
+        userId: 'user-1',
+        fromWalletId: 'wallet-1',
+        recipient: { type: 'wallet' as const, walletPublicKey: 'GTEST123...' },
+        amount: 10,
+        currency: 'USDC',
+        state: 'submitted' as const,
+        statusHistory: [{ state: 'submitted' as const, at: now }],
+        compliance: await mockComplianceService.evaluateTransfer(),
+        processingAttempts: 1,
+        transactionHash: 'tx_hash_ok',
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await mockRepository.save(transfer as any);
+      await (transferLifecycle as any).settleTransfer('submitted-with-hash');
+
+      expect(mockWalletService.refundEscrow).not.toHaveBeenCalledWith(
+        expect.objectContaining({ transferId: 'submitted-with-hash' }),
+      );
+    });
+  });
+
 });

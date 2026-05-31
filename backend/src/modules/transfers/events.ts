@@ -7,6 +7,8 @@ export const TransferEventType = {
   Settled: 'transfer.settled',
   Failed: 'transfer.failed',
   Flagged: 'transfer.flagged',
+  RollbackTriggered: 'transfer.rollback_triggered',
+  ReconciliationLogged: 'transfer.reconciliation_logged',
   QueueCompleted: 'queue.transfer_completed',
   QueueFailed: 'queue.transfer_failed',
   EscrowCreated: 'escrow.created',
@@ -58,6 +60,26 @@ export interface TransferFlaggedEventPayload {
   amount: number;
   currency: string;
   recipientName: string;
+}
+
+
+
+export interface TransferRollbackTriggeredEventPayload {
+  userId: string;
+  transferId: string;
+  amount: number;
+  currency: string;
+  recipientName: string;
+  reason: string;
+}
+
+export interface TransferReconciliationLoggedEventPayload {
+  userId: string;
+  transferId: string;
+  previousState: TransferState;
+  state: TransferState;
+  reason: string;
+  details?: Record<string, unknown>;
 }
 
 export interface QueueTransferCompletedEventPayload {
